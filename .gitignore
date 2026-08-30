@@ -1,0 +1,7 @@
+/.composer-cache/
+/tmp/
+/backend/vendor/
+/backend/.env
+/backend/storage/logs/*.log
+__pycache__/
+*.pyc

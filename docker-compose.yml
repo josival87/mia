@@ -1,0 +1,84 @@
+x-app-environment: &app-environment
+  APP_NAME: "Mia Assistente"
+  APP_ENV: "${APP_ENV:-local}"
+  APP_KEY: "${APP_KEY:-base64:Z8iAbJxJqhOzLNS7v6lY3gfAxT8jHorrRZTHmplZwlo=}"
+  APP_DEBUG: "${APP_DEBUG:-true}"
+  APP_URL: "${APP_URL:-http://localhost:8088}"
+  APP_LOCALE: pt_BR
+  APP_FALLBACK_LOCALE: pt_BR
+  APP_TIMEZONE: America/Sao_Paulo
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_DATABASE: mia
+  DB_USERNAME: mia
+  DB_PASSWORD: mia_local_password
+  SESSION_DRIVER: database
+  CACHE_STORE: database
+  QUEUE_CONNECTION: database
+  COGNITION_URL: "http://cognition:8000"
+  TELEGRAM_UPDATE_MODE: "${TELEGRAM_UPDATE_MODE:-polling}"
+  TELEGRAM_WEBHOOK_URL: "${TELEGRAM_WEBHOOK_URL:-}"
+  ALUGAPRO_FINANCE_API_KEY: "${ALUGAPRO_FINANCE_API_KEY:-}"
+  DASHPAY_FINANCE_API_KEY: "${DASHPAY_FINANCE_API_KEY:-}"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mia
+      POSTGRES_USER: mia
+      POSTGRES_PASSWORD: mia_local_password
+    volumes:
+      - mia_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mia -d mia"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  cognition:
+    build: ./cognition
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    image: mia-app
+    build: ./backend
+    ports:
+      - "8088:8000"
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cognition:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost:8000/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  telegram-worker:
+    image: mia-app
+    entrypoint: ["php", "artisan", "mia:telegram-poll"]
+    environment: *app-environment
+    depends_on:
+      app:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      cognition:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 40s
+
+volumes:
+  mia_postgres_data:
