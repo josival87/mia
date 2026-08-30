@@ -26,7 +26,9 @@ Route::middleware('guest')->group(function () {
     Route::post('/criar-senha', [AuthController::class, 'createPassword'])->name('password.store');
 });
 Route::post('/sair', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
-Route::post('/telegram/webhook', [TelegramController::class, 'webhook'])->name('telegram.webhook');
+Route::post('/telegram/webhook', [TelegramController::class, 'webhook'])
+    ->middleware('throttle:telegram-webhook')
+    ->name('telegram.webhook');
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -55,6 +57,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/usuarios/{user}', [AdminController::class, 'updateUser'])->name('users.update');
         Route::get('/clientes', [AdminController::class, 'clients'])->name('clients');
         Route::put('/clientes/{user}', [AdminController::class, 'updateClient'])->name('clients.update');
+        Route::delete('/clientes/{user}', [AdminController::class, 'destroyClient'])->name('clients.destroy');
         Route::patch('/clientes/{user}/status', [AdminController::class, 'toggleClient'])->name('clients.status');
         Route::post('/clientes/{user}/telegram/reconectar', [AdminController::class, 'resetClientTelegram'])->name('clients.telegram.reset');
         Route::get('/categorias', [AdminController::class, 'categories'])->name('categories');

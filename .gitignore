@@ -1,4 +1,5 @@
 /.composer-cache/
+/.env
 /tmp/
 /backend/vendor/
 /backend/.env

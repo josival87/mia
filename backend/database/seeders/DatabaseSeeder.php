@@ -23,20 +23,20 @@ class DatabaseSeeder extends Seeder
             'phone' => '(11) 4000-2026',
         ]);
 
-        $admin = User::updateOrCreate(['email' => 'admin@mia.local'], [
+        $admin = User::firstOrCreate(['email' => env('MIA_ADMIN_EMAIL', 'admin@mia.local')], [
             'name' => 'Administrador Mia',
             'cpf' => '00000000000',
-            'password' => 'Mia@12345',
+            'password' => env('MIA_ADMIN_PASSWORD', 'Mia@12345'),
             'role' => 'admin',
             'status' => 'active',
             'email_verified_at' => now(),
         ]);
 
-        $client = User::updateOrCreate(['email' => 'cliente@mia.local'], [
+        $client = User::firstOrCreate(['email' => env('MIA_DEMO_EMAIL', 'cliente@mia.local')], [
             'name' => 'Marina Souza',
             'cpf' => '11111111111',
             'telegram' => 'marina_demo',
-            'password' => 'Mia@12345',
+            'password' => env('MIA_DEMO_PASSWORD', 'Mia@12345'),
             'role' => 'client',
             'status' => 'active',
             'email_verified_at' => now(),
@@ -106,7 +106,7 @@ class DatabaseSeeder extends Seeder
             SystemSetting::firstOrCreate(['key' => $key], ['value' => $value, 'encrypted' => false]);
         }
 
-        $this->command?->info('Mia pronta: admin@mia.local e cliente@mia.local (senha: Mia@12345)');
+        $this->command?->info('Dados iniciais da Mia conferidos.');
         unset($admin);
     }
 }

@@ -13,6 +13,7 @@ use App\Models\VerificationCode;
 use App\Services\TelegramBotService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -90,6 +91,21 @@ class AdminController extends Controller
         $user->update($this->validateManagedUser($request, $user, ['active', 'pending', 'blocked']));
 
         return back()->with('success', 'Cadastro do cliente atualizado.');
+    }
+
+    public function destroyClient(User $user): RedirectResponse
+    {
+        abort_unless($user->role === 'client', 404);
+
+        DB::transaction(function () use ($user): void {
+            $user->notifications()->delete();
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            $user->delete();
+        });
+
+        return redirect()->route('admin.clients')
+            ->with('success', 'Cliente e todos os seus dados foram apagados.');
     }
 
     public function toggleClient(User $user)

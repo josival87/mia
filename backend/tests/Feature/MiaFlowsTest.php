@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\FinanceRecord;
+use App\Models\PendingRegistration;
 use App\Models\PendingTelegramRecord;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -144,29 +145,158 @@ class MiaFlowsTest extends TestCase
     public function test_registration_verification_and_password_flow(): void
     {
         $suffix = Str::lower(Str::random(10));
+        $email = "nova-{$suffix}@example.test";
         $this->post(route('register.store'), [
             'name' => 'Nova Cliente',
             'cpf' => '98765432100',
-            'email' => "nova-{$suffix}@example.test",
-        ])->assertRedirect(route('verification.show'))->assertSessionHas('pending_user_id');
+            'email' => $email,
+        ])->assertRedirect(route('verification.show'))->assertSessionHas('pending_registration_id');
 
-        $user = User::where('email', "nova-{$suffix}@example.test")->firstOrFail();
-        $verification = VerificationCode::where('user_id', $user->id)->latest()->firstOrFail();
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+        $pendingRegistration = PendingRegistration::where('email', $email)->firstOrFail();
+        $firstCode = $pendingRegistration->verification_code;
 
         $this->post(route('verification.renew'))->assertRedirect(route('verification.show'));
-        $renewedVerification = VerificationCode::where('user_id', $user->id)->latest('id')->firstOrFail();
-        $this->assertNotSame($verification->id, $renewedVerification->id);
-        $this->assertNotNull($verification->fresh()->used_at);
+        $pendingRegistration->refresh();
+        $this->assertNotSame($firstCode, $pendingRegistration->verification_code);
 
-        $this->post(route('verification.verify'), ['code' => $renewedVerification->code])
+        SystemSetting::write('telegram_bot_token', '123456:test-token', true);
+        Http::preventStrayRequests();
+        Http::fake(['https://api.telegram.org/bot*/sendMessage' => Http::response(['ok' => true])]);
+        $secret = (string) SystemSetting::read('telegram_webhook_secret', '');
+        $this->withHeader('X-Telegram-Bot-Api-Secret-Token', $secret)->post('/telegram/webhook', [
+            'update_id' => 'registration-'.Str::uuid(),
+            'message' => [
+                'chat' => ['id' => 777010],
+                'from' => ['id' => 991010, 'username' => 'nova_cliente_cadastro'],
+                'text' => '/start '.$pendingRegistration->verification_code,
+            ],
+        ])->assertOk();
+
+        $this->assertSame('991010', $pendingRegistration->fresh()->telegram_user_id);
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+
+        $this->post(route('verification.verify'), ['code' => $pendingRegistration->verification_code])
             ->assertRedirect(route('password.create'));
         $this->post(route('password.store'), [
             'password' => 'Senha@12345',
             'password_confirmation' => 'Senha@12345',
         ])->assertRedirect(route('dashboard'));
 
+        $user = User::where('email', $email)->firstOrFail();
         $this->assertAuthenticatedAs($user->fresh());
         $this->assertSame('active', $user->fresh()->status);
+        $this->assertSame('991010', $user->fresh()->telegram_user_id);
+        $this->assertDatabaseMissing('pending_registrations', ['id' => $pendingRegistration->id]);
+    }
+
+    public function test_registration_does_not_advance_to_password_before_telegram_is_connected(): void
+    {
+        $suffix = Str::lower(Str::random(10));
+        $email = "sem-telegram-{$suffix}@example.test";
+        $this->post(route('register.store'), [
+            'name' => 'Cliente sem Telegram',
+            'cpf' => '15975348600',
+            'email' => $email,
+        ])->assertRedirect(route('verification.show'));
+        $pendingRegistration = PendingRegistration::where('email', $email)->firstOrFail();
+
+        $this->post(route('verification.verify'), [
+            'code' => $pendingRegistration->verification_code,
+        ])->assertSessionHasErrors([
+            'code' => 'Abra primeiro o bot com o link desta página para autenticar sua conta do Telegram.',
+        ]);
+
+        $this->get(route('password.create'))->assertNotFound();
+        $this->assertNull($pendingRegistration->fresh()->verification_code_used_at);
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+    }
+
+    public function test_abandoned_registration_can_be_started_again_without_reserving_email_or_cpf(): void
+    {
+        $suffix = Str::lower(Str::random(10));
+        $email = "retomada-{$suffix}@example.test";
+        $data = [
+            'name' => 'Cliente Retomada',
+            'cpf' => '65432198700',
+            'email' => $email,
+        ];
+
+        $this->post(route('register.store'), $data)->assertRedirect(route('verification.show'));
+        $firstPendingId = PendingRegistration::where('email', $email)->value('id');
+
+        $this->post(route('register.store'), $data)->assertRedirect(route('verification.show'));
+
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+        $this->assertSame(1, PendingRegistration::where('email', $email)->where('cpf', $data['cpf'])->count());
+        $this->assertNotSame($firstPendingId, PendingRegistration::where('email', $email)->value('id'));
+    }
+
+    public function test_registration_retry_removes_an_incomplete_user_left_by_the_legacy_flow(): void
+    {
+        $suffix = Str::lower(Str::random(10));
+        $email = "legado-{$suffix}@example.test";
+        $legacyUser = User::create([
+            'name' => 'Cliente Legado',
+            'cpf' => '74185296300',
+            'email' => $email,
+            'password' => Str::random(48),
+            'role' => 'client',
+            'status' => 'pending',
+        ]);
+        VerificationCode::create([
+            'user_id' => $legacyUser->id,
+            'code' => '135790',
+            'purpose' => 'registration',
+            'expires_at' => now()->subMinute(),
+        ]);
+
+        $this->post(route('register.store'), [
+            'name' => 'Cliente Legado',
+            'cpf' => '741.852.963-00',
+            'email' => $email,
+        ])->assertRedirect(route('verification.show'));
+
+        $this->assertDatabaseMissing('users', ['id' => $legacyUser->id]);
+        $this->assertDatabaseHas('pending_registrations', ['email' => $email, 'cpf' => '74185296300']);
+    }
+
+    public function test_conflicting_connection_code_does_not_link_telegram_to_the_wrong_registration(): void
+    {
+        $suffix = Str::lower(Str::random(10));
+        $email = "conflito-{$suffix}@example.test";
+        $this->post(route('register.store'), [
+            'name' => 'Cliente Conflito',
+            'cpf' => '35795148600',
+            'email' => $email,
+        ])->assertRedirect(route('verification.show'));
+        $pendingRegistration = PendingRegistration::where('email', $email)->firstOrFail();
+        $client = User::where('email', 'cliente@mia.local')->firstOrFail();
+        $client->update(['telegram_user_id' => null, 'telegram_chat_id' => null]);
+        VerificationCode::create([
+            'user_id' => $client->id,
+            'code' => $pendingRegistration->verification_code,
+            'purpose' => 'reconnect',
+            'expires_at' => now()->addMinutes(15),
+        ]);
+        SystemSetting::write('telegram_bot_token', '123456:test-token', true);
+        Http::preventStrayRequests();
+        Http::fake(['https://api.telegram.org/bot*/sendMessage' => Http::response(['ok' => true])]);
+        $secret = (string) SystemSetting::read('telegram_webhook_secret', '');
+
+        $this->withHeader('X-Telegram-Bot-Api-Secret-Token', $secret)->post('/telegram/webhook', [
+            'update_id' => 'conflicting-registration-'.Str::uuid(),
+            'message' => [
+                'chat' => ['id' => 777011],
+                'from' => ['id' => 991011, 'username' => 'cliente_conflito'],
+                'text' => '/start '.$pendingRegistration->verification_code,
+            ],
+        ])->assertOk();
+
+        $this->assertNull($pendingRegistration->fresh()->telegram_user_id);
+        $this->assertNull($client->fresh()->telegram_user_id);
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage')
+            && str_contains((string) $request['text'], 'entrou em conflito'));
     }
 
     public function test_client_cannot_access_admin_panel(): void

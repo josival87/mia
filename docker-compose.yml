@@ -1,3 +1,5 @@
+name: mia
+
 x-app-environment: &app-environment
   APP_NAME: "Mia Assistente"
   APP_ENV: "${APP_ENV:-local}"
@@ -13,15 +15,23 @@ x-app-environment: &app-environment
   DB_PORT: 5432
   DB_DATABASE: mia
   DB_USERNAME: mia
-  DB_PASSWORD: mia_local_password
+  DB_PASSWORD: "${DB_PASSWORD:-mia_local_password}"
   SESSION_DRIVER: database
+  SESSION_COOKIE: "${SESSION_COOKIE:-mia_session}"
+  SESSION_PATH: "${SESSION_PATH:-/}"
+  SESSION_SECURE_COOKIE: "${SESSION_SECURE_COOKIE:-false}"
   CACHE_STORE: database
   QUEUE_CONNECTION: database
   COGNITION_URL: "http://cognition:8000"
   TELEGRAM_UPDATE_MODE: "${TELEGRAM_UPDATE_MODE:-polling}"
   TELEGRAM_WEBHOOK_URL: "${TELEGRAM_WEBHOOK_URL:-}"
+  TELEGRAM_WEBHOOK_SECRET: "${TELEGRAM_WEBHOOK_SECRET:-}"
   ALUGAPRO_FINANCE_API_KEY: "${ALUGAPRO_FINANCE_API_KEY:-}"
   DASHPAY_FINANCE_API_KEY: "${DASHPAY_FINANCE_API_KEY:-}"
+  MIA_ADMIN_EMAIL: "${MIA_ADMIN_EMAIL:-admin@mia.local}"
+  MIA_ADMIN_PASSWORD: "${MIA_ADMIN_PASSWORD:-Mia@12345}"
+  MIA_DEMO_EMAIL: "${MIA_DEMO_EMAIL:-cliente@mia.local}"
+  MIA_DEMO_PASSWORD: "${MIA_DEMO_PASSWORD:-Mia@12345}"
 
 services:
   postgres:
@@ -29,7 +39,7 @@ services:
     environment:
       POSTGRES_DB: mia
       POSTGRES_USER: mia
-      POSTGRES_PASSWORD: mia_local_password
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-mia_local_password}"
     volumes:
       - mia_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -52,7 +62,7 @@ services:
     image: mia-app
     build: ./backend
     ports:
-      - "8088:8000"
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8088}:8000"
     environment: *app-environment
     depends_on:
       postgres:

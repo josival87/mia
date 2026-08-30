@@ -1,5 +1,8 @@
 @extends('layouts.public')
 @section('title', 'Mia Assistente — Finanças e atividades em um só lugar')
+@section('styles')
+    <link rel="stylesheet" href="{{ asset('css/landing.css') }}">
+@endsection
 @section('content')
 <header class="landing-header">
     <a class="brand" href="{{ route('landing') }}"><span class="brand-mark">M</span><span>Mia<small>Assistente</small></span></a>

@@ -17,6 +17,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
+        // The production container is reachable only through Apache, which
+        // supplies the HTTPS scheme and the /mia forwarded prefix.
+        $middleware->trustProxies(at: '*');
+
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'external.integration' => AuthenticateExternalIntegration::class,

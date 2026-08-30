@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Models\FinanceRecord;
+use App\Models\Task;
 use App\Observers\FinanceRecordObserver;
+use App\Observers\TaskObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -25,6 +27,16 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         FinanceRecord::observe(FinanceRecordObserver::class);
+        Task::observe(TaskObserver::class);
+
+        RateLimiter::for('telegram-webhook', function (Request $request): Limit {
+            $telegramUserId = (string) (data_get($request->input('message'), 'from.id')
+                ?? data_get($request->input('edited_message'), 'from.id')
+                ?? data_get($request->input('callback_query'), 'from.id')
+                ?? 'anonymous:'.($request->ip() ?: 'unknown'));
+
+            return Limit::perMinute(30)->by('telegram:'.hash('sha256', $telegramUserId));
+        });
 
         RateLimiter::for('external-finance', function (Request $request): array {
             $ip = $request->ip() ?: 'unknown';

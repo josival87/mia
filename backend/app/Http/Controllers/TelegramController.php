@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\FinanceRecord;
+use App\Models\PendingRegistration;
 use App\Models\PendingTelegramRecord;
 use App\Models\ProcessedTelegramUpdate;
 use App\Models\SystemSetting;
@@ -133,8 +134,27 @@ class TelegramController extends Controller
 
     private function connectWithCode(string $chatId, string $telegramUserId, string $username, string $code): void
     {
+        $pendingRegistrations = PendingRegistration::where('verification_code', $code)
+            ->whereNull('verification_code_used_at')
+            ->where('verification_code_expires_at', '>', now())
+            ->latest()
+            ->limit(2)
+            ->get();
         $verification = VerificationCode::where('code', $code)->whereNull('used_at')
             ->where('expires_at', '>', now())->latest()->first();
+
+        if ($pendingRegistrations->count() + (int) ($verification !== null) > 1) {
+            $this->reply($chatId, 'Este código entrou em conflito com outro vínculo. Gere um novo código no sistema da Mia.');
+
+            return;
+        }
+
+        if ($pendingRegistrations->isNotEmpty()) {
+            $this->connectPendingRegistration($pendingRegistrations->first(), $chatId, $telegramUserId, $username);
+
+            return;
+        }
+
         if (! $verification) {
             $this->reply($chatId, 'Código inválido ou expirado. Gere um novo código no sistema.');
 
@@ -167,6 +187,40 @@ class TelegramController extends Controller
         }
 
         $this->reply($chatId, "Telegram conectado! Volte ao cadastro e confirme o código {$verification->code}.");
+    }
+
+    private function connectPendingRegistration(
+        PendingRegistration $pendingRegistration,
+        string $chatId,
+        string $telegramUserId,
+        string $username
+    ): void {
+        $alreadyLinked = User::where('telegram_user_id', $telegramUserId)->exists()
+            || PendingRegistration::where('telegram_user_id', $telegramUserId)
+                ->where('id', '!=', $pendingRegistration->id)
+                ->exists();
+        if ($alreadyLinked) {
+            $this->reply($chatId, 'Esta conta do Telegram já está vinculada a outro cliente. Desconecte-a antes de continuar.');
+
+            return;
+        }
+
+        $attributes = [
+            'telegram_user_id' => $telegramUserId,
+            'telegram_chat_id' => $chatId,
+            'telegram_verified_at' => now(),
+        ];
+        $telegramInUse = $username === ''
+            || User::where('telegram', $username)->exists()
+            || PendingRegistration::where('telegram', $username)
+                ->where('id', '!=', $pendingRegistration->id)
+                ->exists();
+        if (! $telegramInUse) {
+            $attributes['telegram'] = $username;
+        }
+
+        $pendingRegistration->update($attributes);
+        $this->reply($chatId, "Telegram conectado! Volte ao cadastro e confirme o código {$pendingRegistration->verification_code}.");
     }
 
     private function handleCallback(array $callback): void
