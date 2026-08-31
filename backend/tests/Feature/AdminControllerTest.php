@@ -174,6 +174,13 @@ class AdminControllerTest extends TestCase
             'color' => '#16a34a',
             'active' => true,
         ]);
+        $taskCategory = Category::create([
+            'user_id' => $client->id,
+            'name' => 'Casa',
+            'kind' => 'task',
+            'color' => '#16a34a',
+            'active' => true,
+        ]);
         $financeRecord = FinanceRecord::create([
             'user_id' => $client->id,
             'category_id' => $category->id,
@@ -185,7 +192,7 @@ class AdminControllerTest extends TestCase
         ]);
         $task = Task::create([
             'user_id' => $client->id,
-            'category_id' => $category->id,
+            'category_id' => $taskCategory->id,
             'name' => 'Pagar aluguel',
             'priority' => 'high',
             'status' => 'todo',

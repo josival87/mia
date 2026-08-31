@@ -35,7 +35,7 @@ class TelegramPoll extends Command
                 continue;
             }
 
-            $token = trim((string) SystemSetting::read('telegram_bot_token', env('TELEGRAM_BOT_TOKEN')));
+            $token = trim((string) SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token')));
             if ($token === '') {
                 SystemSetting::write('telegram_polling_last_error', 'Aguardando o token do bot nas configurações.');
                 if ($once) {
@@ -80,7 +80,7 @@ class TelegramPoll extends Command
 
             foreach ((array) data_get($response->json(), 'result', []) as $update) {
                 $request = Request::create('/telegram/webhook', 'POST', $update);
-                $secret = SystemSetting::read('telegram_webhook_secret', env('TELEGRAM_WEBHOOK_SECRET'));
+                $secret = SystemSetting::read('telegram_webhook_secret', config('services.telegram.webhook_secret'));
                 if ($secret) {
                     $request->headers->set('X-Telegram-Bot-Api-Secret-Token', $secret);
                 }

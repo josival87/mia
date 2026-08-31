@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SystemSetting;
+use App\Services\RecordSafety;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -33,8 +34,10 @@ Artisan::command('mia:test-ai', function (): int {
         return 1;
     }
 
-    $url = rtrim(SystemSetting::read('cognition_url', env('COGNITION_URL', 'http://cognition:8000')), '/').'/parse';
-    $response = Http::timeout(60)->post($url, [
+    $url = app(RecordSafety::class)->trustedCognitionBaseUrl(
+        (string) SystemSetting::read('cognition_url', config('services.cognition.url')),
+    ).'/parse';
+    $response = Http::connectTimeout(5)->timeout(60)->post($url, [
         'text' => 'Paguei R$ 12,50 em um café hoje.',
         'hint' => 'finance',
         'categories' => [],
@@ -61,9 +64,21 @@ Artisan::command('mia:test-ai', function (): int {
     return 0;
 })->purpose('Valida a chave Gemini configurada sem exibi-la');
 
-Artisan::command('mia:test-audio {file}', function (string $file): int {
+Artisan::command('mia:test-audio {file} {--duration= : Duração verificada do áudio em segundos}', function (string $file): int {
     if (! is_file($file)) {
         $this->error('Arquivo de áudio não encontrado.');
+
+        return 1;
+    }
+
+    $duration = filter_var($this->option('duration'), FILTER_VALIDATE_INT);
+    if ($duration === false || $duration < 1) {
+        $this->error('Informe a duração verificada com --duration=N.');
+
+        return 1;
+    }
+    if ($duration > RecordSafety::MAX_AUDIO_SECONDS || filesize($file) > RecordSafety::MAX_AUDIO_BYTES) {
+        $this->error('Áudio Muito Longo');
 
         return 1;
     }
@@ -75,11 +90,14 @@ Artisan::command('mia:test-audio {file}', function (string $file): int {
         return 1;
     }
 
-    $url = rtrim(SystemSetting::read('cognition_url', env('COGNITION_URL', 'http://cognition:8000')), '/').'/parse-audio';
-    $response = Http::timeout(120)
-        ->attach('file', file_get_contents($file), basename($file))
+    $url = app(RecordSafety::class)->trustedCognitionBaseUrl(
+        (string) SystemSetting::read('cognition_url', config('services.cognition.url')),
+    ).'/parse-audio';
+    $response = Http::connectTimeout(5)->timeout(90)
+        ->attach('file', file_get_contents($file), basename($file), ['Content-Type' => 'audio/ogg'])
         ->post($url, [
             'categories' => '[]',
+            'duration_seconds' => $duration,
             'primary_provider' => 'gemini',
             'gemini_api_key' => $apiKey,
             'gemini_model' => SystemSetting::read('gemini_model', 'gemini-3.6-flash'),

@@ -10,6 +10,7 @@ use App\Models\SystemSetting;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\VerificationCode;
+use App\Services\RecordSafety;
 use App\Services\TelegramBotService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -169,10 +170,10 @@ class AdminController extends Controller
             'ai_primary_provider' => SystemSetting::read('ai_primary_provider', 'gemini'),
             'openai_model' => SystemSetting::read('openai_model', 'gpt-5-mini'),
             'gemini_model' => SystemSetting::read('gemini_model', 'gemini-3.6-flash'),
-            'cognition_url' => SystemSetting::read('cognition_url', env('COGNITION_URL', 'http://cognition:8000')),
+            'cognition_url' => SystemSetting::read('cognition_url', config('services.cognition.url')),
             'telegram_bot_username' => SystemSetting::read('telegram_bot_username', 'bot_Mia_Assistente'),
             'telegram_update_mode' => $telegramBot->mode(),
-            'telegram_webhook_url' => SystemSetting::read('telegram_webhook_url', env('TELEGRAM_WEBHOOK_URL', url('/telegram/webhook'))),
+            'telegram_webhook_url' => SystemSetting::read('telegram_webhook_url', config('services.telegram.webhook_url') ?: url('/telegram/webhook')),
             'telegram_confirmation_amount' => SystemSetting::read('telegram_confirmation_amount', '100'),
             'telegram_min_confidence' => SystemSetting::read('telegram_min_confidence', '0.70'),
             'telegram_direct_confidence' => SystemSetting::read('telegram_direct_confidence', '0.90'),
@@ -180,15 +181,15 @@ class AdminController extends Controller
             'has_gemini_key' => (bool) SystemSetting::read('gemini_api_key'),
             'has_telegram_token' => (bool) SystemSetting::read('telegram_bot_token'),
             'has_webhook_secret' => (bool) SystemSetting::read('telegram_webhook_secret'),
-            'has_alugapro_finance_key' => (bool) SystemSetting::read('alugapro_finance_api_key', env('ALUGAPRO_FINANCE_API_KEY')),
-            'has_dashpay_finance_key' => (bool) SystemSetting::read('dashpay_finance_api_key', env('DASHPAY_FINANCE_API_KEY')),
+            'has_alugapro_finance_key' => (bool) SystemSetting::read('alugapro_finance_api_key', config('services.external_finance.integrations.alugapro.key')),
+            'has_dashpay_finance_key' => (bool) SystemSetting::read('dashpay_finance_api_key', config('services.external_finance.integrations.dashpay.key')),
         ];
         $telegramStatus = $telegramBot->status();
 
         return view('admin.settings', compact('company', 'settings', 'telegramStatus'));
     }
 
-    public function updateSettings(Request $request, TelegramBotService $telegramBot)
+    public function updateSettings(Request $request, TelegramBotService $telegramBot, RecordSafety $recordSafety)
     {
         $data = $request->validate([
             'company_name' => ['required', 'string', 'max:160'],
@@ -198,10 +199,10 @@ class AdminController extends Controller
             'pix_key' => ['nullable', 'string', 'max:180'],
             'ai_primary_provider' => ['required', Rule::in(['gemini', 'openai'])],
             'openai_api_key' => ['nullable', 'string', 'max:500'],
-            'openai_model' => ['required', 'string', 'max:80'],
+            'openai_model' => ['required', 'string', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/'],
             'gemini_api_key' => ['nullable', 'string', 'max:500'],
-            'gemini_model' => ['required', 'string', 'max:80'],
-            'telegram_bot_token' => ['nullable', 'string', 'max:500'],
+            'gemini_model' => ['required', 'string', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/'],
+            'telegram_bot_token' => ['nullable', 'string', 'regex:/^\d{6,12}:[A-Za-z0-9_-]{30,}$/'],
             'telegram_bot_username' => ['required', 'string', 'max:120'],
             'telegram_update_mode' => ['required', Rule::in(['polling', 'webhook'])],
             'telegram_webhook_url' => ['nullable', 'url', 'max:500'],
@@ -213,6 +214,8 @@ class AdminController extends Controller
             'dashpay_finance_api_key' => ['nullable', 'string', 'min:32', 'max:500'],
             'cognition_url' => ['required', 'url', 'max:255'],
         ]);
+
+        $data['cognition_url'] = $recordSafety->trustedCognitionBaseUrl($data['cognition_url']);
 
         Company::firstOrCreate(['name' => 'Mia Assistente'])->update([
             'name' => $data['company_name'], 'cnpj' => $data['cnpj'] ?? null, 'phone' => $data['phone'] ?? null,

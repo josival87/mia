@@ -14,7 +14,7 @@ class TelegramBotService
     {
         $default = app()->environment('production') ? 'webhook' : 'polling';
 
-        return (string) SystemSetting::read('telegram_update_mode', env('TELEGRAM_UPDATE_MODE', $default));
+        return (string) SystemSetting::read('telegram_update_mode', config('services.telegram.update_mode') ?: $default);
     }
 
     public function status(): array
@@ -101,8 +101,8 @@ class TelegramBotService
             return ['mode' => 'polling', 'message' => 'Polling local ativado e webhook anterior removido.'];
         }
 
-        $url = trim((string) SystemSetting::read('telegram_webhook_url', env('TELEGRAM_WEBHOOK_URL')));
-        $secret = trim((string) SystemSetting::read('telegram_webhook_secret', env('TELEGRAM_WEBHOOK_SECRET')));
+        $url = trim((string) SystemSetting::read('telegram_webhook_url', config('services.telegram.webhook_url')));
+        $secret = trim((string) SystemSetting::read('telegram_webhook_secret', config('services.telegram.webhook_secret')));
         if (! str_starts_with($url, 'https://')) {
             throw new RuntimeException('Na produção, informe uma URL pública iniciada por https:// para o webhook.');
         }
@@ -122,7 +122,7 @@ class TelegramBotService
 
     private function token(): ?string
     {
-        $token = trim((string) SystemSetting::read('telegram_bot_token', env('TELEGRAM_BOT_TOKEN')));
+        $token = trim((string) SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token')));
 
         return $token !== '' ? $token : null;
     }

@@ -358,7 +358,7 @@ class MiaFlowsTest extends TestCase
             'ai_primary_provider' => 'gemini',
             'gemini_model' => 'gemini-3.6-flash',
             'openai_model' => 'gpt-5-mini',
-            'telegram_bot_token' => '123456:test-token',
+            'telegram_bot_token' => '123456:test-token-with-more-than-thirty-characters',
             'telegram_bot_username' => 'Mia_assistente_br_bot',
             'telegram_update_mode' => 'webhook',
             'telegram_webhook_url' => 'https://mia.example.com/telegram/webhook',

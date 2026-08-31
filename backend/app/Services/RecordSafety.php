@@ -10,7 +10,6 @@ use DateTimeInterface;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use RuntimeException;
 
 class RecordSafety
 {
@@ -115,7 +114,7 @@ class RecordSafety
             'title' => $attributes['title'] ?? null,
             'description' => $attributes['description'] ?? null,
             'amount' => $attributes['amount'] ?? null,
-            'occurred_on' => $this->dateValue($attributes['occurred_on'] ?? null),
+            'occurred_on' => $this->dateValue($record->getAttribute('occurred_on')),
             'source' => $attributes['source'] ?? 'manual',
             'ai_confidence' => $attributes['ai_confidence'] ?? null,
             'source_reference' => $attributes['source_reference'] ?? null,
@@ -153,8 +152,8 @@ class RecordSafety
             'description' => $attributes['description'] ?? null,
             'priority' => $attributes['priority'] ?? 'medium',
             'status' => $attributes['status'] ?? 'todo',
-            'due_on' => $this->dateValue($attributes['due_on'] ?? null),
-            'completed_at' => $attributes['completed_at'] ?? null,
+            'due_on' => $this->dateValue($task->getAttribute('due_on')),
+            'completed_at' => $task->getAttribute('completed_at'),
             'source' => $attributes['source'] ?? 'manual',
             'ai_confidence' => $attributes['ai_confidence'] ?? null,
             'source_reference' => $attributes['source_reference'] ?? null,
@@ -195,10 +194,15 @@ class RecordSafety
             && in_array($parts['scheme'] ?? null, ['http', 'https'], true)
             && isset($parts['host'])
             && $allowedHosts->contains(mb_strtolower((string) $parts['host']))
-            && ! isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment']);
+            && ! isset($parts['user'])
+            && ! isset($parts['pass'])
+            && ! isset($parts['query'])
+            && ! isset($parts['fragment']);
 
         if (! $isSafe) {
-            throw new RuntimeException('A URL do serviço de IA não pertence à lista de destinos confiáveis.');
+            throw ValidationException::withMessages([
+                'cognition_url' => 'A URL do serviço de IA não pertence à lista de destinos confiáveis.',
+            ]);
         }
 
         return $url;

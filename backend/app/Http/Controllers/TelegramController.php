@@ -12,18 +12,27 @@ use App\Models\Task;
 use App\Models\User;
 use App\Models\VerificationCode;
 use App\Services\CategoryGoalProgressService;
+use App\Services\RecordSafety;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class TelegramController extends Controller
 {
-    public function __construct(private readonly CategoryGoalProgressService $goalProgress) {}
+    public function __construct(
+        private readonly CategoryGoalProgressService $goalProgress,
+        private readonly RecordSafety $recordSafety,
+    ) {}
 
     public function webhook(Request $request)
     {
-        $secret = SystemSetting::read('telegram_webhook_secret', env('TELEGRAM_WEBHOOK_SECRET'));
+        $secret = trim((string) SystemSetting::read('telegram_webhook_secret', config('services.telegram.webhook_secret')));
+        if (app()->isProduction() && $secret === '') {
+            abort(503, 'O webhook do Telegram não está configurado com segurança.');
+        }
         if ($secret && ! hash_equals($secret, (string) $request->header('X-Telegram-Bot-Api-Secret-Token'))) {
             abort(403);
         }
@@ -35,7 +44,11 @@ class TelegramController extends Controller
 
         $callback = $request->input('callback_query');
         if ($callback) {
-            $this->handleCallback($callback);
+            try {
+                $this->handleCallback($callback);
+            } catch (ValidationException $exception) {
+                $this->replyValidationFailure((string) data_get($callback, 'message.chat.id'), $exception);
+            }
 
             return response()->json(['ok' => true]);
         }
@@ -72,14 +85,33 @@ class TelegramController extends Controller
         $correction = PendingTelegramRecord::where('user_id', $user->id)
             ->where('status', 'awaiting_correction')->where('expires_at', '>', now())->latest()->first();
         $context = $correction ? $this->correctionContext($correction) : null;
+        $voiceFileId = (string) data_get($message, 'voice.file_id', '');
+        $voiceDuration = (int) data_get($message, 'voice.duration', 0);
+        $voiceFileSize = (int) data_get($message, 'voice.file_size', 0);
+
+        if ($voiceFileId !== '' && ($voiceDuration > RecordSafety::MAX_AUDIO_SECONDS || $voiceFileSize > RecordSafety::MAX_AUDIO_BYTES)) {
+            $this->reply($chatId, 'Áudio Muito Longo');
+
+            return response()->json(['ok' => true]);
+        }
+        if ($voiceFileId !== '' && $voiceDuration < 1) {
+            $this->reply($chatId, 'Não foi possível validar a duração do áudio. Nenhum registro foi criado.');
+
+            return response()->json(['ok' => true]);
+        }
 
         try {
-            $parsed = data_get($message, 'voice.file_id')
-                ? $this->parseVoice((string) data_get($message, 'voice.file_id'), $user, $context)
+            $parsed = $voiceFileId !== ''
+                ? $this->parseVoice($voiceFileId, $voiceDuration, $voiceFileSize, $user, $context)
                 : $this->parseText($text, $user, $context);
             $this->handleParsed($parsed, $user, $chatId, $updateId ?: null, $correction);
+        } catch (ValidationException $exception) {
+            $this->replyValidationFailure($chatId, $exception);
         } catch (\Throwable $e) {
-            report($e);
+            Log::warning('Falha ao processar atualização do Telegram com dados sensíveis omitidos.', [
+                'exception_class' => $e::class,
+                'update_hash' => $updateId !== '' ? hash('sha256', $updateId) : null,
+            ]);
             $this->reply($chatId, 'Não consegui interpretar essa mensagem. Inclua descrição, valor e data ou envie um áudio mais claro.');
         }
 
@@ -91,18 +123,24 @@ class TelegramController extends Controller
         $chatId = (string) $user->telegram_chat_id;
         abort_if($chatId === '', 422, 'O Telegram do cliente não está conectado.');
 
-        $parsed = $this->parseText($text, $user, null, 'finance');
-        $data = $parsed['data'] ?? [];
-        if (($parsed['kind'] ?? null) !== 'finance'
-            || ! in_array($data['type'] ?? null, ['income', 'expense'], true)
-            || ! is_numeric($data['amount'] ?? null)
-            || (float) $data['amount'] <= 0) {
-            $this->reply($chatId, 'Mia 🤖\n\nRecebi uma notificação bancária do iPhone, mas ela não continha um lançamento financeiro completo. Nenhum registro foi criado.');
+        try {
+            $parsed = $this->parseText($text, $user, null, 'finance');
+            $data = $parsed['data'] ?? [];
+            if (($parsed['kind'] ?? null) !== 'finance'
+                || ! in_array($data['type'] ?? null, ['income', 'expense'], true)
+                || ! is_numeric($data['amount'] ?? null)
+                || (float) $data['amount'] <= 0) {
+                $this->reply($chatId, 'Mia 🤖\n\nRecebi uma notificação bancária do iPhone, mas ela não continha um lançamento financeiro completo. Nenhum registro foi criado.');
+
+                return 'rejected';
+            }
+
+            return $this->handleParsed($parsed, $user, $chatId, $sourceReference, null);
+        } catch (ValidationException $exception) {
+            $this->replyValidationFailure($chatId, $exception);
 
             return 'rejected';
         }
-
-        return $this->handleParsed($parsed, $user, $chatId, $sourceReference, null);
     }
 
     public function notifyUser(User $user, string $text): void
@@ -280,6 +318,7 @@ class TelegramController extends Controller
 
     private function handleParsed(array $parsed, User $user, string $chatId, ?string $updateId, ?PendingTelegramRecord $correction): string
     {
+        $parsed = $this->recordSafety->validatedAiRecord($parsed, $user);
         $confidence = max(0, min(1, (float) ($parsed['confidence'] ?? 0)));
         $lowThreshold = (float) SystemSetting::read('telegram_min_confidence', '0.70');
         $directThreshold = (float) SystemSetting::read('telegram_direct_confidence', '0.90');
@@ -328,30 +367,68 @@ class TelegramController extends Controller
     private function parseText(string $text, User $user, ?string $context = null, string $hint = 'auto'): array
     {
         abort_if($text === '', 422);
+        $this->recordSafety->assertAiInputIsSafe($text);
         $message = $context ? $context."\nCorreção informada pelo usuário: ".$text : $text;
 
         return $this->cognitionRequest('/parse', $this->payload($user) + ['text' => $message, 'hint' => $hint]);
     }
 
-    private function parseVoice(string $fileId, User $user, ?string $context = null): array
+    private function parseVoice(string $fileId, int $duration, int $declaredFileSize, User $user, ?string $context = null): array
     {
-        $token = SystemSetting::read('telegram_bot_token', env('TELEGRAM_BOT_TOKEN'));
+        if ($duration > RecordSafety::MAX_AUDIO_SECONDS || $declaredFileSize > RecordSafety::MAX_AUDIO_BYTES) {
+            throw ValidationException::withMessages(['voice' => 'Áudio Muito Longo']);
+        }
+        if (! preg_match('/^[A-Za-z0-9_-]{1,512}$/', $fileId)) {
+            throw ValidationException::withMessages(['voice' => 'O identificador do áudio é inválido.']);
+        }
+
+        $token = SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token'));
         abort_unless($token, 503);
-        $file = Http::timeout(15)->get("https://api.telegram.org/bot{$token}/getFile", ['file_id' => $fileId])->throw()->json();
-        $audio = Http::timeout(30)->get("https://api.telegram.org/file/bot{$token}/".data_get($file, 'result.file_path'))->throw()->body();
-        $url = rtrim(SystemSetting::read('cognition_url', env('COGNITION_URL', 'http://cognition:8000')), '/').'/parse-audio';
+        $file = Http::connectTimeout(5)->timeout(15)
+            ->get("https://api.telegram.org/bot{$token}/getFile", ['file_id' => $fileId])
+            ->throw()
+            ->json();
+        $filePath = (string) data_get($file, 'result.file_path', '');
+        $verifiedFileSize = (int) data_get($file, 'result.file_size', $declaredFileSize);
+        if ($verifiedFileSize > RecordSafety::MAX_AUDIO_BYTES) {
+            throw ValidationException::withMessages(['voice' => 'Áudio Muito Longo']);
+        }
+        if (! preg_match('/^[A-Za-z0-9_.\/-]+\.(?:ogg|oga|opus)$/', $filePath)) {
+            throw ValidationException::withMessages(['voice' => 'O arquivo de áudio retornado pelo Telegram é inválido.']);
+        }
+
+        $audio = Http::connectTimeout(5)->timeout(30)
+            ->get("https://api.telegram.org/file/bot{$token}/{$filePath}")
+            ->throw()
+            ->body();
+        if (strlen($audio) > RecordSafety::MAX_AUDIO_BYTES) {
+            throw ValidationException::withMessages(['voice' => 'Áudio Muito Longo']);
+        }
+
+        $url = $this->cognitionUrl('/parse-audio');
         $payload = $this->payload($user) + ['context' => $context ?: 'Mensagem recebida por áudio.'];
 
-        return Http::timeout(120)->attach('file', $audio, 'telegram-voice.ogg')
-            ->post($url, array_map(fn ($value) => is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value, $payload))
+        return Http::connectTimeout(5)->timeout(90)
+            ->attach('file', $audio, 'telegram-voice.ogg', ['Content-Type' => 'audio/ogg'])
+            ->post($url, array_map(
+                fn ($value) => is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value,
+                $payload + ['duration_seconds' => $duration],
+            ))
             ->throw()->json();
     }
 
     private function cognitionRequest(string $path, array $payload): array
     {
-        $url = rtrim(SystemSetting::read('cognition_url', env('COGNITION_URL', 'http://cognition:8000')), '/').$path;
+        $url = $this->cognitionUrl($path);
 
-        return Http::timeout(60)->post($url, $payload)->throw()->json();
+        return Http::connectTimeout(5)->timeout(60)->post($url, $payload)->throw()->json();
+    }
+
+    private function cognitionUrl(string $path): string
+    {
+        $configuredUrl = (string) SystemSetting::read('cognition_url', config('services.cognition.url'));
+
+        return $this->recordSafety->trustedCognitionBaseUrl($configuredUrl).$path;
     }
 
     private function payload(User $user): array
@@ -503,7 +580,7 @@ class TelegramController extends Controller
 
     private function reply(string $chatId, string $text, ?array $replyMarkup = null): void
     {
-        $token = SystemSetting::read('telegram_bot_token', env('TELEGRAM_BOT_TOKEN'));
+        $token = SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token'));
         if (! $token) {
             return;
         }
@@ -516,12 +593,22 @@ class TelegramController extends Controller
 
     private function answerCallback(string $callbackId, string $text): void
     {
-        $token = SystemSetting::read('telegram_bot_token', env('TELEGRAM_BOT_TOKEN'));
+        $token = SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token'));
         if ($token && $callbackId !== '') {
             Http::timeout(8)->post("https://api.telegram.org/bot{$token}/answerCallbackQuery", [
                 'callback_query_id' => $callbackId,
                 'text' => $text,
             ]);
         }
+    }
+
+    private function replyValidationFailure(string $chatId, ValidationException $exception): void
+    {
+        $voiceMessage = data_get($exception->errors(), 'voice.0');
+        $message = $voiceMessage === 'Áudio Muito Longo'
+            ? 'Áudio Muito Longo'
+            : 'Conteúdo bloqueado por segurança. Remova senhas, códigos, tokens ou instruções maliciosas. Nenhum registro foi criado.';
+
+        $this->reply($chatId, $message);
     }
 }

@@ -35,6 +35,21 @@ return [
         ],
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'update_mode' => env('TELEGRAM_UPDATE_MODE'),
+        'webhook_url' => env('TELEGRAM_WEBHOOK_URL'),
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
+    ],
+
+    'cognition' => [
+        'url' => env('COGNITION_URL', 'http://cognition:8000'),
+        'allowed_hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('COGNITION_ALLOWED_HOSTS', 'cognition,localhost,127.0.0.1')),
+        ))),
+    ],
+
     'external_finance' => [
         'integrations' => [
             'alugapro' => [
