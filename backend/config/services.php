@@ -56,11 +56,13 @@ return [
                 'label' => 'AlugaPro',
                 'setting' => 'alugapro_finance_api_key',
                 'key' => env('ALUGAPRO_FINANCE_API_KEY'),
+                'receipt_category' => 'Aluguel',
             ],
             'dashpay' => [
                 'label' => 'Dashpay',
                 'setting' => 'dashpay_finance_api_key',
                 'key' => env('DASHPAY_FINANCE_API_KEY'),
+                'receipt_category' => 'credpix',
             ],
         ],
     ],

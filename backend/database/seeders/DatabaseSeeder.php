@@ -59,7 +59,7 @@ class DatabaseSeeder extends Seeder
         }
 
         $categorySets = [
-            'income' => [['Salário', '#16a34a'], ['Freelance', '#22c55e'], ['Investimentos', '#14b8a6'], ['Vendas', '#84cc16'], ['Outras entradas', '#65a30d']],
+            'income' => [['Salário', '#16a34a'], ['Freelance', '#22c55e'], ['Investimentos', '#14b8a6'], ['Vendas', '#84cc16'], ['Aluguel', '#0ea5e9'], ['credpix', '#8b5cf6'], ['Outras entradas', '#65a30d']],
             'expense' => [['Alimentação', '#f97316'], ['Moradia', '#ef4444'], ['Transporte', '#3b82f6'], ['Saúde', '#ec4899'], ['Educação', '#8b5cf6'], ['Lazer', '#eab308'], ['Assinaturas', '#6366f1'], ['Outras saídas', '#64748b']],
             'task' => [['Trabalho', '#2563eb'], ['Pessoal', '#16a34a'], ['Casa', '#f97316'], ['Saúde', '#ec4899'], ['Estudos', '#8b5cf6']],
         ];

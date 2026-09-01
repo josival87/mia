@@ -56,6 +56,13 @@ class ExternalFinanceApiTest extends TestCase
             'source' => 'api:alugapro',
             'source_reference' => "api:alugapro:client:{$client->id}:{$externalId}",
         ]);
+        $this->assertSame(
+            'Aluguel',
+            FinanceRecord::where('source_reference', "api:alugapro:client:{$client->id}:{$externalId}")
+                ->firstOrFail()
+                ->category
+                ->name,
+        );
 
         $this->withToken(self::ALUGAPRO_KEY)
             ->getJson("/api/v1/clientes/{$client->id}/recebimentos/{$externalId}")
@@ -90,6 +97,13 @@ class ExternalFinanceApiTest extends TestCase
             ->assertJsonValidationErrors('external_id');
 
         $this->assertSame(1, FinanceRecord::where('source_reference', "api:dashpay:client:{$client->id}:{$externalId}")->count());
+        $this->assertSame(
+            'credpix',
+            FinanceRecord::where('source_reference', "api:dashpay:client:{$client->id}:{$externalId}")
+                ->firstOrFail()
+                ->category
+                ->name,
+        );
     }
 
     public function test_requests_require_a_valid_key_and_valid_payload(): void

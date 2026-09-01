@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreExternalReceiptRequest;
+use App\Models\Category;
 use App\Models\FinanceRecord;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -20,11 +21,13 @@ class ExternalReceiptController extends Controller
         $amount = number_format((float) $data['amount'], 2, '.', '');
         $occurredOn = $data['occurred_on'] ?? today()->toDateString();
         $sourceReference = $this->sourceReference($integration, $clientModel, $data['external_id']);
+        $category = $this->receiptCategory($integration);
 
         $record = FinanceRecord::firstOrCreate(
             ['source_reference' => $sourceReference],
             [
                 'user_id' => $clientModel->id,
+                'category_id' => $category->id,
                 'type' => 'income',
                 'title' => $data['title'],
                 'description' => $data['description'],
@@ -82,6 +85,18 @@ class ExternalReceiptController extends Controller
     private function sourceReference(string $integration, User $client, string $externalId): string
     {
         return sprintf('api:%s:client:%d:%s', $integration, $client->id, $externalId);
+    }
+
+    private function receiptCategory(string $integration): Category
+    {
+        $categoryName = config("services.external_finance.integrations.{$integration}.receipt_category");
+
+        abort_unless(is_string($categoryName) && $categoryName !== '', Response::HTTP_INTERNAL_SERVER_ERROR, 'Categoria da integração não configurada.');
+
+        return Category::firstOrCreate(
+            ['user_id' => null, 'name' => $categoryName, 'kind' => 'income'],
+            ['active' => true],
+        );
     }
 
     private function samePayload(
