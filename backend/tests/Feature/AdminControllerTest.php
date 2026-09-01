@@ -368,4 +368,72 @@ class AdminControllerTest extends TestCase
             ->assertSee(route('admin.clients.destroy', $client))
             ->assertSee('Esta ação não pode ser desfeita.');
     }
+
+    public function test_client_page_displays_finance_and_activity_totals_for_each_client(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $client = User::factory()->client()->create();
+        $otherClient = User::factory()->client()->create();
+        FinanceRecord::create([
+            'user_id' => $client->id,
+            'type' => 'expense',
+            'description' => 'Compra de material',
+            'amount' => 45.90,
+            'occurred_on' => '2026-09-01',
+            'source' => 'manual',
+        ]);
+        FinanceRecord::create([
+            'user_id' => $client->id,
+            'type' => 'income',
+            'description' => 'Recebimento de cliente',
+            'amount' => 120,
+            'occurred_on' => '2026-09-01',
+            'source' => 'manual',
+        ]);
+        FinanceRecord::create([
+            'user_id' => $otherClient->id,
+            'type' => 'expense',
+            'description' => 'Registro de outro cliente',
+            'amount' => 10,
+            'occurred_on' => '2026-09-01',
+            'source' => 'manual',
+        ]);
+        Task::create([
+            'user_id' => $client->id,
+            'name' => 'Primeira atividade',
+            'priority' => 'medium',
+            'status' => 'todo',
+            'source' => 'manual',
+        ]);
+        Task::create([
+            'user_id' => $client->id,
+            'name' => 'Segunda atividade',
+            'priority' => 'medium',
+            'status' => 'doing',
+            'source' => 'manual',
+        ]);
+        Task::create([
+            'user_id' => $client->id,
+            'name' => 'Terceira atividade',
+            'priority' => 'medium',
+            'status' => 'done',
+            'source' => 'manual',
+        ]);
+        Task::create([
+            'user_id' => $otherClient->id,
+            'name' => 'Atividade de outro cliente',
+            'priority' => 'medium',
+            'status' => 'todo',
+            'source' => 'manual',
+        ]);
+
+        $response = $this->actingAs($admin)->get(route('admin.clients'));
+
+        $response->assertSeeTextInOrder(['Financeiro', 'Atividades'])
+            ->assertSee('Total financeiro: 2')
+            ->assertSee('Total de atividades: 3');
+        $listedClient = $response->viewData('clients')->getCollection()->firstWhere('id', $client->id);
+        $this->assertSame(2, $listedClient->finance_records_count);
+        $this->assertSame(3, $listedClient->tasks_count);
+    }
 }

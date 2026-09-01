@@ -79,6 +79,7 @@ class AdminController extends Controller
     public function clients(Request $request)
     {
         $clients = User::where('role', 'client')
+            ->withCount(['financeRecords', 'tasks'])
             ->when($request->filled('q'), fn ($q) => $q->where(fn ($s) => $s->where('name', 'ilike', '%'.$request->q.'%')->orWhere('email', 'ilike', '%'.$request->q.'%')))
             ->latest()->paginate(15)->withQueryString();
 
