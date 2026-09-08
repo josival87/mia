@@ -57,6 +57,41 @@ class RecordSafetyTest extends TestCase
             && str_contains((string) $request['text'], 'Conteúdo bloqueado por segurança'));
     }
 
+    public function test_benign_bare_amount_is_sent_for_interpretation(): void
+    {
+        $client = $this->configuredTelegramClient();
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://cognition:8000/parse' => Http::response([
+                'kind' => 'finance',
+                'confidence' => 0.99,
+                'provider' => 'local',
+                'data' => [
+                    'type' => 'expense',
+                    'description' => 'Conserto carro',
+                    'amount' => 580,
+                    'occurred_on' => '2026-09-08',
+                    'category_id' => null,
+                ],
+            ]),
+            'https://api.telegram.org/bot*/sendMessage' => Http::response(['ok' => true]),
+        ]);
+
+        $this->postTelegramUpdate($client, [
+            'text' => 'gastei 580 conserto carro',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('pending_telegram_records', [
+            'user_id' => $client->id,
+            'kind' => 'finance',
+            'reason' => 'high_value',
+        ]);
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://cognition:8000/parse'
+            && $request['text'] === 'gastei 580 conserto carro');
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage')
+            && str_contains((string) $request['text'], 'Valor: R$ 580,00'));
+    }
+
     public function test_untrusted_ai_destination_is_blocked_before_keys_can_be_sent(): void
     {
         $client = $this->configuredTelegramClient();
@@ -133,7 +168,39 @@ class RecordSafetyTest extends TestCase
 
         $this->assertDatabaseCount('finance_records', 0);
         Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage')
-            && str_contains((string) $request['text'], 'Conteúdo bloqueado por segurança'));
+            && str_contains((string) $request['text'], 'Não consegui validar os dados desse lançamento')
+            && ! str_contains((string) $request['text'], 'Conteúdo bloqueado por segurança'));
+    }
+
+    public function test_invalid_amount_is_not_reported_as_a_security_failure(): void
+    {
+        $client = $this->configuredTelegramClient();
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://cognition:8000/parse' => Http::response([
+                'kind' => 'finance',
+                'confidence' => 0.55,
+                'provider' => 'local',
+                'data' => [
+                    'type' => 'expense',
+                    'description' => 'Peça de carro',
+                    'amount' => 0,
+                    'occurred_on' => '2026-09-08',
+                    'category_id' => null,
+                ],
+            ]),
+            'https://api.telegram.org/bot*/sendMessage' => Http::response(['ok' => true]),
+        ]);
+
+        $this->postTelegramUpdate($client, [
+            'text' => '580 peça de carro',
+        ])->assertOk();
+
+        $this->assertDatabaseCount('finance_records', 0);
+        $this->assertDatabaseCount('pending_telegram_records', 0);
+        Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/sendMessage')
+            && str_contains((string) $request['text'], 'Não consegui validar os dados desse lançamento')
+            && ! str_contains((string) $request['text'], 'Conteúdo bloqueado por segurança'));
     }
 
     public function test_thirty_second_audio_is_processed_with_verified_limits(): void

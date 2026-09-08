@@ -1,13 +1,132 @@
 from io import BytesIO
-from unittest import IsolatedAsyncioTestCase
+from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, UploadFile
 
-from main import MAX_AUDIO_BYTES, ParseRequest, parse, parse_audio, parse_request
+from main import MAX_AUDIO_BYTES, Category, ParseRequest, local_parse, parse, parse_audio, parse_request
+
+
+class LocalParsingTest(TestCase):
+    def test_understands_bare_brazilian_real_amounts(self) -> None:
+        examples = (
+            ("gastei 580 conserto carro", 580.0, "expense"),
+            ("580 peça de carro", 580.0, "expense"),
+            ("um real água mineral", 1.0, "expense"),
+            ("recebi 580 salário", 580.0, "income"),
+        )
+
+        for text, expected_amount, expected_type in examples:
+            with self.subTest(text=text):
+                result = local_parse(ParseRequest(text=text))
+
+                self.assertEqual(expected_amount, result["data"]["amount"])
+                self.assertEqual(expected_type, result["data"]["type"])
+
+    def test_uses_semantic_alias_to_select_expense_category(self) -> None:
+        request = ParseRequest(
+            text="um real água mineral",
+            categories=[
+                Category(id=10, name="Salário", kind="income"),
+                Category(id=20, name="Gastos - Bebidas", kind="expense"),
+            ],
+        )
+
+        result = local_parse(request)
+
+        self.assertEqual(20, result["data"]["category_id"])
 
 
 class ProviderPriorityTest(IsolatedAsyncioTestCase):
+    async def test_bare_amount_overrides_provider_income_guess(self) -> None:
+        request = ParseRequest(
+            text="580 peça de carro",
+            categories=[
+                Category(id=10, name="Salário", kind="income"),
+                Category(id=20, name="Carro", kind="expense"),
+            ],
+            gemini_api_key="gemini",
+        )
+        gemini_result = {
+            "provider": "gemini",
+            "kind": "finance",
+            "confidence": 0.95,
+            "data": {
+                "type": "income",
+                "description": "Peça de carro",
+                "amount": 580,
+                "occurred_on": "2026-09-08",
+                "category_id": 10,
+            },
+        }
+
+        with patch("main.parse_with_gemini", new=AsyncMock(return_value=gemini_result)):
+            result = await parse_request(request)
+
+        self.assertEqual("expense", result["data"]["type"])
+        self.assertEqual(20, result["data"]["category_id"])
+
+    async def test_repeated_expense_description_is_reduced_to_category_keywords(self) -> None:
+        request = ParseRequest(
+            text=(
+                "Compra aprovada no valor de R$ 10,99 em LEM Lojas de Conveniência "
+                "LEM Lojas de Conveniência LEM Lojas de Conveniência."
+            ),
+            hint="finance",
+            categories=[Category(id=7, name="Alimentação", kind="expense")],
+            gemini_api_key="gemini",
+        )
+        gemini_result = {
+            "provider": "gemini",
+            "kind": "finance",
+            "confidence": 0.82,
+            "data": {
+                "type": "expense",
+                "description": (
+                    "Lem lojas de convenienr$ ,99lem lojas de convenienlem "
+                    "lojas de convenienlem lojas de convenien"
+                ),
+                "amount": 10.99,
+                "occurred_on": "2026-09-08",
+                "category_id": None,
+            },
+        }
+
+        with patch("main.parse_with_gemini", new=AsyncMock(return_value=gemini_result)):
+            result = await parse_request(request)
+
+        self.assertEqual("Lem lojas Conveniência", result["data"]["description"])
+        self.assertEqual(7, result["data"]["category_id"])
+
+    async def test_complete_iphone_notification_uses_direct_confidence_with_local_fallback(self) -> None:
+        request = ParseRequest(
+            text=(
+                "Compra aprovada no valor de R$ 10,99 em LEM Lojas de Conveniência "
+                "LEM Lojas de Conveniência LEM Lojas de Conveniência."
+            ),
+            hint="finance",
+            categories=[Category(id=7, name="Alimentação", kind="expense")],
+        )
+
+        result = await parse_request(request)
+
+        self.assertEqual("local", result["provider"])
+        self.assertEqual(0.92, result["confidence"])
+        self.assertEqual("LEM Lojas Conveniência", result["data"]["description"])
+        self.assertEqual(10.99, result["data"]["amount"])
+        self.assertEqual(7, result["data"]["category_id"])
+
+    async def test_local_fallback_keeps_confirmation_confidence_without_merchant_keywords(self) -> None:
+        request = ParseRequest(
+            text="Compra aprovada no cartão no valor de R$ 10,99.",
+            hint="finance",
+        )
+
+        result = await parse_request(request)
+
+        self.assertEqual(0.82, result["confidence"])
+        self.assertEqual("Lançamento via Telegram", result["data"]["description"])
+
     async def test_gemini_is_the_default_primary_provider(self) -> None:
         request = ParseRequest(text="Paguei 10 reais", gemini_api_key="gemini", openai_api_key="openai")
         gemini_result = {"provider": "gemini", "kind": "finance", "data": {}}

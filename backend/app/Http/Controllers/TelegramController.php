@@ -604,10 +604,20 @@ class TelegramController extends Controller
 
     private function replyValidationFailure(string $chatId, ValidationException $exception): void
     {
-        $voiceMessage = data_get($exception->errors(), 'voice.0');
-        $message = $voiceMessage === 'Áudio Muito Longo'
-            ? 'Áudio Muito Longo'
-            : 'Conteúdo bloqueado por segurança. Remova senhas, códigos, tokens ou instruções maliciosas. Nenhum registro foi criado.';
+        $validationErrors = $exception->errors();
+        $errors = collect($validationErrors)->flatten();
+        $isSecurityFailure = $errors->contains(fn (mixed $error): bool => is_string($error) && (
+            str_contains($error, 'Remova senhas, códigos de autenticação')
+            || str_contains($error, 'instruções que não podem ser enviadas à IA')
+            || str_contains($error, 'caracteres de controle não permitidos')
+        ));
+
+        $message = match (true) {
+            $errors->contains('Áudio Muito Longo') => 'Áudio Muito Longo',
+            $isSecurityFailure => 'Conteúdo bloqueado por segurança. Remova senhas, códigos, tokens ou instruções maliciosas. Nenhum registro foi criado.',
+            array_key_exists('cognition_url', $validationErrors) => 'O serviço de interpretação não está configurado corretamente. Nenhum registro foi criado.',
+            default => 'Não consegui validar os dados desse lançamento. Envie novamente com um valor maior que zero e uma descrição clara. Nenhum registro foi criado.',
+        };
 
         $this->reply($chatId, $message);
     }
