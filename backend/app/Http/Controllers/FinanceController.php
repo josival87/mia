@@ -38,9 +38,20 @@ class FinanceController extends Controller
     public function update(Request $request, FinanceRecord $finance)
     {
         $this->authorizeOwner($request, $finance);
+        $returnTo = $request->validate([
+            'month' => ['sometimes', 'date_format:Y-m'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+        $selectedCategoryId = $this->categoryFilter($request);
+        $selectedType = $this->typeFilter($request);
         $finance->update($this->validated($request));
 
-        return redirect()->route('finance.index', ['month' => $finance->occurred_on->format('Y-m')])->with('success', 'Lançamento atualizado.');
+        return redirect()->route('finance.index', [
+            'month' => $returnTo['month'] ?? $finance->occurred_on->format('Y-m'),
+            'page' => $returnTo['page'] ?? 1,
+            'filter_category' => $selectedCategoryId,
+            'filter_type' => $selectedType,
+        ])->with('success', 'Lançamento atualizado.');
     }
 
     public function destroy(Request $request, FinanceRecord $finance)
@@ -59,13 +70,23 @@ class FinanceController extends Controller
             $month = now()->startOfMonth();
         }
         $query = FinanceRecord::where('user_id', $request->user()->id)->whereBetween('occurred_on', [$month->copy()->startOfMonth(), $month->copy()->endOfMonth()]);
-        $records = (clone $query)->with('category')->latest('occurred_on')->latest('id')->paginate(12)->withQueryString();
+        $selectedCategoryId = $this->categoryFilter($request);
+        $recordQuery = clone $query;
+        $selectedType = $this->typeFilter($request);
+        if ($selectedCategoryId !== null) {
+            $recordQuery->where('category_id', $selectedCategoryId);
+        }
+        if ($selectedType !== null) {
+            $recordQuery->where('type', $selectedType);
+        }
+        $records = $recordQuery->with('category')->latest('occurred_on')->latest('id')->paginate(20)->withPath(route('finance.index'))->withQueryString();
         $income = (clone $query)->where('type', 'income')->sum('amount');
         $expense = (clone $query)->where('type', 'expense')->sum('amount');
         $byCategory = (clone $query)->selectRaw('category_id, type, sum(amount) as total')->with('category')->groupBy('category_id', 'type')->get();
         $incomeCategoryReport = $this->categoryReport($byCategory->where('type', 'income'), (float) $income);
         $expenseCategoryReport = $this->categoryReport($byCategory->where('type', 'expense'), (float) $expense);
         $categories = Category::availableTo($request->user())->whereIn('kind', ['income', 'expense'])->where('active', true)->orderBy('name')->get();
+        $filterCategories = Category::availableTo($request->user())->whereIn('kind', ['income', 'expense'])->orderBy('name')->get();
         $goalCategories = $categories->where('kind', 'expense')->values();
         $categoryGoals = CategoryGoal::query()
             ->with('category')
@@ -88,12 +109,41 @@ class FinanceController extends Controller
             'incomeCategoryReport',
             'expenseCategoryReport',
             'categories',
+            'filterCategories',
+            'selectedCategoryId',
+            'selectedType',
             'goalCategories',
             'categoryGoals',
             'goalProgress',
             'trackingDate',
             'editRecord',
         ));
+    }
+
+    private function categoryFilter(Request $request): ?int
+    {
+        $filter = $request->query('filter_category');
+        if ($filter === null || $filter === '') {
+            return null;
+        }
+
+        $categoryId = filter_var($filter, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        abort_if($categoryId === false, 404);
+        Category::availableTo($request->user())->whereIn('kind', ['income', 'expense'])->findOrFail($categoryId);
+
+        return $categoryId;
+    }
+
+    private function typeFilter(Request $request): ?string
+    {
+        $filter = $request->query('filter_type');
+        if ($filter === null || $filter === '') {
+            return null;
+        }
+
+        abort_unless(in_array($filter, ['income', 'expense'], true), 404);
+
+        return $filter;
     }
 
     private function categoryReport(Collection $rows, float $total): array

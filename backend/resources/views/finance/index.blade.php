@@ -5,7 +5,7 @@
     <div><span class="page-kicker">CONTROLE FINANCEIRO</span><h1>Financeiro</h1><p>Entenda para onde seu dinheiro vai, mês a mês.</p></div>
     <div class="page-actions"><button class="btn btn-ghost" type="button" data-modal-open="goal-modal">Gerenciar metas</button><button class="btn btn-primary" type="button" data-modal-open="finance-modal">+ Novo lançamento</button></div>
 </div>
-<div class="month-switcher standalone"><a href="{{ route('finance.index', ['month' => $month->copy()->subMonth()->format('Y-m')]) }}">‹</a><strong>{{ ucfirst($month->translatedFormat('F Y')) }}</strong><a href="{{ route('finance.index', ['month' => $month->copy()->addMonth()->format('Y-m')]) }}">›</a></div>
+<div class="month-switcher standalone"><a href="{{ route('finance.index', ['month' => $month->copy()->subMonth()->format('Y-m'), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) }}">‹</a><strong>{{ ucfirst($month->translatedFormat('F Y')) }}</strong><a href="{{ route('finance.index', ['month' => $month->copy()->addMonth()->format('Y-m'), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) }}">›</a></div>
 <section class="metric-grid three compact-metrics">
     <article class="metric-card"><span>Entradas</span><strong class="positive">R$ {{ number_format($income, 2, ',', '.') }}</strong></article>
     <article class="metric-card"><span>Saídas</span><strong class="negative">R$ {{ number_format($expense, 2, ',', '.') }}</strong></article>
@@ -91,14 +91,38 @@
     </article>
 
     <article class="panel">
-        <div class="panel-heading"><div><h2>Todos os lançamentos</h2><p>{{ $records->total() }} registro(s) no período</p></div></div>
+        <div class="panel-heading"><div><h2>{{ $selectedCategoryId || $selectedType ? 'Lançamentos filtrados' : 'Todos os lançamentos' }}</h2><p>{{ $records->total() }} registro(s) no período{{ $selectedCategoryId || $selectedType ? ' com os filtros selecionados' : '' }}</p></div></div>
+        <form method="GET" action="{{ route('finance.index') }}" class="finance-category-filter">
+            <input type="hidden" name="month" value="{{ $month->format('Y-m') }}">
+            <label for="finance-filter-type">Tipo
+                <select id="finance-filter-type" name="filter_type">
+                    <option value="">Todas as entradas e saídas</option>
+                    <option value="income" {{ $selectedType === 'income' ? 'selected' : '' }}>Só entradas</option>
+                    <option value="expense" {{ $selectedType === 'expense' ? 'selected' : '' }}>Só saídas</option>
+                </select>
+            </label>
+            <label for="finance-filter-category">Categoria
+                <select id="finance-filter-category" name="filter_category">
+                    <option value="">Todas as categorias</option>
+                    @foreach(['income' => 'Entradas', 'expense' => 'Saídas'] as $kind => $label)
+                        <optgroup label="{{ $label }}">
+                            @foreach($filterCategories->where('kind', $kind) as $category)
+                                <option value="{{ $category->id }}" {{ $selectedCategoryId === $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
+                            @endforeach
+                        </optgroup>
+                    @endforeach
+                </select>
+            </label>
+            <button type="submit" class="btn btn-primary">Filtrar</button>
+            <a class="btn btn-ghost" href="{{ route('finance.index', ['month' => $month->format('Y-m')]) }}">Todos os lançamentos</a>
+        </form>
         <div class="responsive-table"><table><thead><tr><th>Descrição</th><th>Categoria</th><th>Data</th><th>Valor</th><th></th></tr></thead><tbody>
             @forelse($records as $record)
-                <tr><td><div class="table-title"><span class="record-icon {{ $record->type }}">{{ $record->type === 'income' ? '↓' : '↑' }}</span><div><strong>{{ $record->title ?: $record->description }}</strong>@if($record->title)<br><small class="muted">{{ $record->description }}</small>@endif</div></div></td><td><span class="category-chip"><i style="background:{{ $record->category?->color ?? '#94a3b8' }}"></i>{{ $record->category?->name ?? 'Sem categoria' }}</span></td><td>{{ $record->occurred_on->format('d/m/Y') }}</td><td><strong class="amount {{ $record->type }}">{{ $record->type === 'income' ? '+' : '-' }} R$ {{ number_format($record->amount, 2, ',', '.') }}</strong></td><td><div class="row-actions"><a href="{{ route('finance.edit', ['finance' => $record, 'month' => $month->format('Y-m')]) }}">Editar</a><form method="POST" action="{{ route('finance.destroy', $record) }}" data-confirm="Remover este lançamento?">@csrf @method('DELETE')<button>Excluir</button></form></div></td></tr>
+                <tr><td><div class="table-title"><span class="record-icon {{ $record->type }}">{{ $record->type === 'income' ? '↓' : '↑' }}</span><div><strong>{{ $record->title ?: $record->description }}</strong>@if($record->title)<br><small class="muted">{{ $record->description }}</small>@endif</div></div></td><td><span class="category-chip"><i style="background:{{ $record->category?->color ?? '#94a3b8' }}"></i>{{ $record->category?->name ?? 'Sem categoria' }}</span></td><td>{{ $record->occurred_on->format('d/m/Y') }}</td><td><strong class="amount {{ $record->type }}">{{ $record->type === 'income' ? '+' : '-' }} R$ {{ number_format($record->amount, 2, ',', '.') }}</strong></td><td><div class="row-actions"><a href="{{ route('finance.edit', ['finance' => $record, 'month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) }}">Editar</a><form method="POST" action="{{ route('finance.destroy', $record) }}" data-confirm="Remover este lançamento?">@csrf @method('DELETE')<button>Excluir</button></form></div></td></tr>
             @empty
-                <tr><td colspan="5"><div class="empty-state"><strong>Nenhum lançamento neste mês</strong><p>Crie um lançamento ou fale com a Mia no Telegram.</p></div></td></tr>
+                <tr><td colspan="5"><div class="empty-state"><strong>{{ $selectedCategoryId || $selectedType ? 'Nenhum lançamento com esses filtros no mês selecionado' : 'Nenhum lançamento neste mês' }}</strong><p>{{ $selectedCategoryId || $selectedType ? 'Altere os filtros ou limpe a seleção.' : 'Crie um lançamento ou fale com a Mia no Telegram.' }}</p></div></td></tr>
             @endforelse
-        </tbody></table></div>{{ $records->links() }}
+        </tbody></table></div>{{ $records->links('finance.pagination') }}
     </article>
 </div>
 
@@ -121,13 +145,13 @@
     <div class="modal-backdrop" data-modal-close></div>
     <div class="modal-card">
         <div class="modal-heading"><div><span class="page-kicker">{{ $editRecord ? 'EDITANDO' : 'NOVO REGISTRO' }}</span><h2>{{ $editRecord ? 'Editar lançamento' : 'Novo lançamento' }}</h2></div><button type="button" data-modal-close aria-label="Fechar">×</button></div>
-        <form method="POST" action="{{ $editRecord ? route('finance.update', $editRecord) : route('finance.store') }}" class="stack-form" data-category-form>@csrf @if($editRecord)@method('PUT')@endif
+        <form method="POST" action="{{ $editRecord ? route('finance.update', ['finance' => $editRecord, 'month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) : route('finance.store') }}" class="stack-form" data-category-form>@csrf @if($editRecord)@method('PUT')@endif
             <div class="segmented"><label><input type="radio" name="type" value="expense" {{ old('type', $editRecord?->type ?? 'expense') === 'expense' ? 'checked' : '' }}><span>Saída</span></label><label><input type="radio" name="type" value="income" {{ old('type', $editRecord?->type) === 'income' ? 'checked' : '' }}><span>Entrada</span></label></div>
             <label>Descrição<input name="description" value="{{ old('description', $editRecord?->description) }}" placeholder="Ex.: Supermercado" required></label>
             <div class="form-grid"><label>Valor (R$)<input type="number" name="amount" value="{{ old('amount', $editRecord?->amount) }}" min="0.01" step="0.01" placeholder="0,00" required></label><label>Data<input type="date" name="occurred_on" value="{{ old('occurred_on', $editRecord?->occurred_on?->format('Y-m-d') ?? now()->toDateString()) }}" required></label></div>
             <label>Categoria<select name="category_id"><option value="">Sem categoria</option>@foreach($categories as $category)<option value="{{ $category->id }}" data-kind="{{ $category->kind }}" {{ (string) old('category_id', $editRecord?->category_id) === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select></label>
             <button class="btn btn-primary btn-block" type="submit">{{ $editRecord ? 'Salvar alterações' : 'Adicionar lançamento' }}</button>
-            @if($editRecord)<a class="modal-cancel-link" href="{{ route('finance.index', ['month' => $month->format('Y-m')]) }}">Cancelar edição</a>@endif
+            @if($editRecord)<a class="modal-cancel-link" href="{{ route('finance.index', ['month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) }}">Cancelar edição</a>@endif
         </form>
     </div>
 </div>

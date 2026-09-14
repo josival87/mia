@@ -40,7 +40,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/alertas/{notification}/ler', [AlertController::class, 'read'])->name('alerts.read');
     Route::resource('atividades', TaskController::class)->parameters(['atividades' => 'task'])->except(['create', 'show'])->names('tasks');
     Route::patch('/atividades/{task}/status', [TaskController::class, 'status'])->name('tasks.status');
-    Route::resource('categorias', CategoryController::class)->only(['index', 'store', 'destroy'])->names('categories');
+    Route::resource('categorias', CategoryController::class)->parameters(['categorias' => 'category'])->only(['index', 'store', 'edit', 'update', 'destroy'])->names('categories');
     Route::get('/telegram', [TelegramConnectionController::class, 'show'])->name('telegram.connection');
     Route::post('/telegram/reconectar', [TelegramConnectionController::class, 'reconnect'])->name('telegram.reconnect');
     Route::delete('/telegram', [TelegramConnectionController::class, 'disconnect'])->name('telegram.disconnect');

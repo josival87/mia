@@ -41,12 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.querySelectorAll('[data-category-form]').forEach(form => {
     const select = form.querySelector('select[name="category_id"]');
+    const options = Array.from(select.options);
     const sync = () => {
       const type = form.querySelector('input[name="type"]:checked')?.value;
-      Array.from(select.options).forEach(option => {
-        option.hidden = option.dataset.kind && option.dataset.kind !== type;
-        if (option.selected && option.hidden) select.value = '';
-      });
+      const selectedValue = select.value;
+      const matchingOptions = options.filter(option => !option.dataset.kind || option.dataset.kind === type);
+      select.replaceChildren(...matchingOptions);
+      select.value = matchingOptions.some(option => option.value === selectedValue) ? selectedValue : '';
     };
     form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener('change', sync));
     sync();

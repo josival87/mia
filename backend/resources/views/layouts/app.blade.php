@@ -80,7 +80,7 @@
         @endforeach
     </nav>
 </div>
-<script src="{{ asset('js/mia.js') }}" defer></script>
+<script src="{{ asset('js/mia.js') }}?v={{ filemtime(public_path('js/mia.js')) }}" defer></script>
 @stack('scripts')
 </body>
 </html>
