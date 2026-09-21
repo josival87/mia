@@ -1,0 +1,17 @@
+services:
+  cognition-api:
+    build: .
+    container_name: cognition-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - GOMEMLIMIT=3500MiB
+      - GOMAXPROCS=1
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 3800M
+    restart: unless-stopped

@@ -1,0 +1,14 @@
+# Binaries
+/api
+*.exe
+
+# Env files
+.env
+.env.*
+
+# Go files
+vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
