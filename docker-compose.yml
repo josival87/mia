@@ -51,6 +51,16 @@ services:
 
   cognition:
     build: ./mia-conition
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOMEMLIMIT=3500MiB
+      - GOMAXPROCS=1
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 3800M
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
       interval: 10s
