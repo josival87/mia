@@ -46,8 +46,9 @@ class DatabaseSeeder extends Seeder
         $menus = [
             ['audience' => 'client', 'label' => 'Dashboard', 'route' => 'dashboard', 'icon' => 'grid', 'position' => 1],
             ['audience' => 'client', 'label' => 'Financeiro', 'route' => 'finance.index', 'icon' => 'wallet', 'position' => 2],
-            ['audience' => 'client', 'label' => 'Atividades', 'route' => 'tasks.index', 'icon' => 'tasks', 'position' => 3],
-            ['audience' => 'client', 'label' => 'Categorias', 'route' => 'categories.index', 'icon' => 'tag', 'position' => 4],
+            ['audience' => 'client', 'label' => 'Cartão de Crédito', 'route' => 'credit-cards.index', 'icon' => 'card', 'position' => 3],
+            ['audience' => 'client', 'label' => 'Atividades', 'route' => 'tasks.index', 'icon' => 'tasks', 'position' => 4],
+            ['audience' => 'client', 'label' => 'Categorias', 'route' => 'categories.index', 'icon' => 'tag', 'position' => 5],
             ['audience' => 'admin', 'label' => 'Dashboard', 'route' => 'admin.dashboard', 'icon' => 'grid', 'position' => 1],
             ['audience' => 'admin', 'label' => 'Usuários', 'route' => 'admin.users', 'icon' => 'shield', 'position' => 2],
             ['audience' => 'admin', 'label' => 'Clientes', 'route' => 'admin.clients', 'icon' => 'users', 'position' => 3],

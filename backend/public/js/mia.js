@@ -53,12 +53,73 @@ document.addEventListener('DOMContentLoaded', () => {
     sync();
   });
 
+  document.querySelectorAll('[data-card-purchase-form]').forEach(form => {
+    const fields = form.querySelector('[data-card-purchase-fields]');
+    const panel = form.querySelector('[data-card-payment-panel]');
+    const paymentMethod = form.querySelector('[name="payment_method"]');
+    const purchaseType = form.querySelector('[name="card_purchase_type"]');
+    const installmentsField = form.querySelector('[data-installments-field]');
+    const syncCardFields = () => {
+      const isExpense = form.querySelector('[name="type"]:checked')?.value === 'expense';
+      fields.hidden = !isExpense;
+      if (!isExpense) paymentMethod.value = 'direct';
+      const isCard = isExpense && paymentMethod.value === 'credit_card';
+      panel.hidden = !isCard;
+      panel.querySelectorAll('select,input').forEach(input => { input.disabled = !isCard; });
+      if (purchaseType && isCard) {
+        const isInstallments = purchaseType.value === 'installments';
+        installmentsField.hidden = !isInstallments;
+        installmentsField.querySelector('input').disabled = !isInstallments;
+      }
+    };
+    form.querySelectorAll('[name="type"], [name="payment_method"], [name="card_purchase_type"]').forEach(input => input.addEventListener('change', syncCardFields));
+    syncCardFields();
+  });
+
   const goalForm = document.querySelector('[data-goal-form]');
   document.querySelectorAll('[data-goal-edit]').forEach(button => button.addEventListener('click', () => {
     if (!goalForm) return;
     goalForm.querySelector('[name="category_id"]').value = button.dataset.categoryId;
     goalForm.querySelector('[name="monthly_amount"]').value = button.dataset.monthlyAmount;
   }));
+
+  document.querySelectorAll('[data-upload-form]').forEach(form => form.addEventListener('submit', () => {
+    const button = form.querySelector('[data-upload-submit]');
+    if (!button) return;
+    button.disabled = true;
+    button.textContent = 'A Mia está lendo a fatura…';
+  }));
+
+  const invoiceReview = document.querySelector('[data-invoice-review]');
+  if (invoiceReview) {
+    const checkboxes = Array.from(invoiceReview.querySelectorAll('[data-invoice-item]'));
+    const count = invoiceReview.querySelector('[data-selected-summary]');
+    const total = invoiceReview.querySelector('[data-selected-total]');
+    const submit = invoiceReview.querySelector('[data-import-submit]');
+    const currency = new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'});
+    const updateInvoiceSummary = () => {
+      const selected = checkboxes.filter(checkbox => checkbox.checked);
+      count.textContent = `${selected.length} selecionado${selected.length === 1 ? '' : 's'}`;
+      total.textContent = currency.format(selected.reduce((sum, checkbox) => sum + Number(checkbox.dataset.amount || 0), 0));
+      submit.disabled = selected.length === 0;
+      invoiceReview.querySelectorAll('[data-duplicate-confirm]').forEach(confirmation => {
+        const item = checkboxes.find(checkbox => checkbox.value === confirmation.dataset.duplicateConfirm);
+        confirmation.disabled = !item?.checked;
+        confirmation.required = Boolean(item?.checked);
+        if (!item?.checked) confirmation.checked = false;
+      });
+    };
+    checkboxes.forEach(checkbox => checkbox.addEventListener('change', updateInvoiceSummary));
+    invoiceReview.querySelectorAll('[data-invoice-select]').forEach(button => button.addEventListener('click', () => {
+      checkboxes.forEach(checkbox => { checkbox.checked = button.dataset.invoiceSelect === 'all'; });
+      updateInvoiceSummary();
+    }));
+    invoiceReview.addEventListener('submit', () => {
+      submit.disabled = true;
+      submit.textContent = 'Importando…';
+    });
+    updateInvoiceSummary();
+  }
 
   setTimeout(() => document.querySelectorAll('[data-alert]').forEach(alert => alert.classList.add('fade')), 5500);
 });

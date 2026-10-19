@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Models\CategoryGoal;
+use App\Models\CreditCard;
 use App\Models\FinanceRecord;
 use App\Services\CategoryGoalProgressService;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 class FinanceController extends Controller
 {
@@ -20,12 +26,71 @@ class FinanceController extends Controller
         return $this->render($request);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
+        $request->mergeIfMissing(['payment_method' => 'direct']);
         $data = $this->validated($request);
-        FinanceRecord::create($data + ['user_id' => $request->user()->id, 'source' => 'manual']);
+        $cardData = $request->validate([
+            'payment_method' => ['required', Rule::in(['direct', 'credit_card'])],
+            'credit_card_id' => [Rule::requiredIf(fn (): bool => $request->input('payment_method') === 'credit_card'), 'nullable', 'integer'],
+            'card_purchase_type' => [Rule::requiredIf(fn (): bool => $request->input('payment_method') === 'credit_card'), 'nullable', Rule::in(['one_time', 'installments'])],
+            'installments' => [Rule::requiredIf(fn (): bool => $request->input('card_purchase_type') === 'installments'), 'nullable', 'integer', 'between:2,120'],
+            'billing_month' => [Rule::requiredIf(fn (): bool => $request->input('payment_method') === 'credit_card'), 'nullable', 'date_format:Y-m'],
+        ]);
 
-        return back()->with('success', 'Lançamento salvo com sucesso.');
+        if ($cardData['payment_method'] !== 'credit_card') {
+            FinanceRecord::create($data + ['user_id' => $request->user()->id, 'source' => 'manual']);
+
+            return back()->with('success', 'Lançamento salvo com sucesso.');
+        }
+        if ($data['type'] !== 'expense') {
+            throw ValidationException::withMessages(['payment_method' => 'Cartão de crédito só pode ser usado em lançamentos de saída.']);
+        }
+
+        $card = CreditCard::where('user_id', $request->user()->id)->where('active', true)->findOrFail($cardData['credit_card_id']);
+        $installmentTotal = $cardData['card_purchase_type'] === 'installments' ? (int) $cardData['installments'] : 1;
+        $totalCents = (int) round(((float) $data['amount']) * 100);
+        if ($totalCents < $installmentTotal) {
+            throw ValidationException::withMessages(['amount' => 'O valor total deve permitir parcelas de pelo menos R$ 0,01.']);
+        }
+        $firstBillingMonth = Carbon::createFromFormat('Y-m', $cardData['billing_month'])->startOfMonth();
+        $purchaseDate = Carbon::parse($data['occurred_on']);
+        $installmentGroup = (string) Str::uuid();
+        $baseCents = intdiv($totalCents, $installmentTotal);
+        $remainder = $totalCents % $installmentTotal;
+
+        DB::transaction(function () use ($request, $data, $card, $installmentTotal, $firstBillingMonth, $purchaseDate, $installmentGroup, $baseCents, $remainder): void {
+            for ($number = 1; $number <= $installmentTotal; $number++) {
+                $month = $firstBillingMonth->copy()->addMonthsNoOverflow($number - 1);
+                $day = min($card->due_day ?: $purchaseDate->day, $month->daysInMonth);
+                $description = $installmentTotal > 1
+                    ? Str::limit($data['description'], 160, '')." ({$number}/{$installmentTotal})"
+                    : $data['description'];
+                $amountCents = $baseCents + ($number <= $remainder ? 1 : 0);
+                FinanceRecord::create([
+                    'user_id' => $request->user()->id,
+                    'category_id' => $data['category_id'] ?? null,
+                    'credit_card_id' => $card->id,
+                    'type' => 'expense',
+                    'title' => $card->name,
+                    'description' => $description,
+                    'amount' => $amountCents / 100,
+                    'occurred_on' => $month->day($day),
+                    'purchased_on' => $purchaseDate,
+                    'source' => 'manual_credit_card',
+                    'source_reference' => "manual-card:{$installmentGroup}:{$number}",
+                    'installment_group' => $installmentGroup,
+                    'installment_number' => $number,
+                    'installment_total' => $installmentTotal,
+                ]);
+            }
+        });
+
+        $message = $installmentTotal > 1
+            ? "Compra salva em {$installmentTotal} parcelas. As cobranças futuras já foram lançadas."
+            : 'Compra no cartão lançada no mês de cobrança escolhido.';
+
+        return redirect()->route('finance.index', ['month' => $firstBillingMonth->format('Y-m')])->with('success', $message);
     }
 
     public function edit(Request $request, FinanceRecord $finance)
@@ -62,7 +127,7 @@ class FinanceController extends Controller
         return back()->with('success', 'Lançamento removido.');
     }
 
-    private function render(Request $request, ?FinanceRecord $editRecord = null)
+    private function render(Request $request, ?FinanceRecord $editRecord = null): View
     {
         try {
             $month = Carbon::createFromFormat('Y-m', $request->input('month', now()->format('Y-m')))->startOfMonth();
@@ -88,6 +153,7 @@ class FinanceController extends Controller
         $categories = Category::availableTo($request->user())->whereIn('kind', ['income', 'expense'])->where('active', true)->orderBy('name')->get();
         $filterCategories = Category::availableTo($request->user())->whereIn('kind', ['income', 'expense'])->orderBy('name')->get();
         $goalCategories = $categories->where('kind', 'expense')->values();
+        $creditCards = CreditCard::where('user_id', $request->user()->id)->where('active', true)->orderBy('name')->get();
         $categoryGoals = CategoryGoal::query()
             ->with('category')
             ->where('user_id', $request->user()->id)
@@ -113,6 +179,7 @@ class FinanceController extends Controller
             'selectedCategoryId',
             'selectedType',
             'goalCategories',
+            'creditCards',
             'categoryGoals',
             'goalProgress',
             'trackingDate',
