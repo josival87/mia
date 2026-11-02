@@ -1,17 +1,17 @@
+# Uso isolado do serviço Go, só para desenvolvimento. Em produção ele sobe pelo compose da raiz,
+# sem nenhuma porta publicada.
 services:
   cognition-api:
     build: .
-    container_name: cognition-api
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
-      - GOMEMLIMIT=3500MiB
-      - GOMAXPROCS=1
+      - GOMEMLIMIT=400MiB
+    ports:
+      - "127.0.0.1:8000:8000"
     deploy:
       resources:
         limits:
           cpus: '1.0'
-          memory: 3800M
+          memory: 512M
     restart: unless-stopped

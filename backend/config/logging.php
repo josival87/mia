@@ -99,7 +99,7 @@ return [
                 'port' => env('PAPERTRAIL_PORT'),
                 'connectionString' => 'tls://'.env('PAPERTRAIL_URL').':'.env('PAPERTRAIL_PORT'),
             ],
-            'processors' => [PsrLogMessageProcessor::class],
+            'processors' => [PsrLogMessageProcessor::class, \App\Logging\RedactSecretsProcessor::class],
         ],
 
         'stderr' => [

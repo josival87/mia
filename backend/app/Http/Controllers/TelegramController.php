@@ -13,6 +13,9 @@ use App\Models\User;
 use App\Models\VerificationCode;
 use App\Services\CategoryGoalProgressService;
 use App\Services\RecordSafety;
+use App\Jobs\ProcessTelegramUpdate;
+use App\Services\AiQuota;
+use App\Services\PlanB\PlanBTelegramCommands;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -25,6 +28,7 @@ class TelegramController extends Controller
     public function __construct(
         private readonly CategoryGoalProgressService $goalProgress,
         private readonly RecordSafety $recordSafety,
+        private readonly AiQuota $aiQuota,
     ) {}
 
     public function webhook(Request $request)
@@ -42,6 +46,22 @@ class TelegramController extends Controller
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 
+        // Responde ao Telegram em milissegundos; o trabalho pesado (áudio, IA) roda no queue-worker.
+        ProcessTelegramUpdate::dispatch($request->all());
+
+        return response()->json(['ok' => true, 'queued' => true]);
+    }
+
+    /**
+     * Processa uma atualização já autenticada e deduplicada. Chamado pelo Job ProcessTelegramUpdate.
+     *
+     * @param  array<string, mixed>  $update
+     */
+    public function processUpdate(array $update): void
+    {
+        $request = new Request($update);
+        $updateId = (string) $request->input('update_id', '');
+
         $callback = $request->input('callback_query');
         if ($callback) {
             try {
@@ -50,12 +70,12 @@ class TelegramController extends Controller
                 $this->replyValidationFailure((string) data_get($callback, 'message.chat.id'), $exception);
             }
 
-            return response()->json(['ok' => true]);
+            return;
         }
 
         $message = $request->input('message') ?? $request->input('edited_message');
         if (! $message) {
-            return response()->json(['ok' => true]);
+            return;
         }
 
         $chatId = (string) data_get($message, 'chat.id');
@@ -66,7 +86,7 @@ class TelegramController extends Controller
         if (str_starts_with($text, '/start')) {
             $this->handleStart($chatId, $telegramUserId, $username, $text);
 
-            return response()->json(['ok' => true]);
+            return;
         }
 
         $user = User::where('telegram_user_id', $telegramUserId)->where('status', 'active')->first();
@@ -74,12 +94,20 @@ class TelegramController extends Controller
             if (preg_match('/^(?:c[oó]digo\s*:?\s*)?(\d{6})$/iu', $text, $matches)) {
                 $this->connectWithCode($chatId, $telegramUserId, $username, $matches[1]);
 
-                return response()->json(['ok' => true]);
+                return;
             }
 
             $this->reply($chatId, 'Esta conta do Telegram não está vinculada a um cliente ativo. Gere um código de conexão no sistema da Mia.');
 
-            return response()->json(['ok' => true]);
+            return;
+        }
+
+        // Comandos rápidos do Plano B: regex, sem IA e sem gastar cota.
+        $planBReply = app(PlanBTelegramCommands::class)->handle($user, $text);
+        if ($planBReply !== null) {
+            $this->reply($chatId, $planBReply);
+
+            return;
         }
 
         $correction = PendingTelegramRecord::where('user_id', $user->id)
@@ -92,12 +120,12 @@ class TelegramController extends Controller
         if ($voiceFileId !== '' && ($voiceDuration > RecordSafety::MAX_AUDIO_SECONDS || $voiceFileSize > RecordSafety::MAX_AUDIO_BYTES)) {
             $this->reply($chatId, 'Áudio Muito Longo');
 
-            return response()->json(['ok' => true]);
+            return;
         }
         if ($voiceFileId !== '' && $voiceDuration < 1) {
             $this->reply($chatId, 'Não foi possível validar a duração do áudio. Nenhum registro foi criado.');
 
-            return response()->json(['ok' => true]);
+            return;
         }
 
         try {
@@ -115,7 +143,7 @@ class TelegramController extends Controller
             $this->reply($chatId, 'Não consegui interpretar essa mensagem. Inclua descrição, valor e data ou envie um áudio mais claro.');
         }
 
-        return response()->json(['ok' => true]);
+        return;
     }
 
     public function ingestBankNotification(User $user, string $text, string $sourceReference): string
@@ -369,8 +397,11 @@ class TelegramController extends Controller
         abort_if($text === '', 422);
         $this->recordSafety->assertAiInputIsSafe($text);
         $message = $context ? $context."\nCorreção informada pelo usuário: ".$text : $text;
+        $this->aiQuota->consume($user);
+        $parsed = $this->cognitionRequest('/parse', $this->payload($user) + ['text' => $message, 'hint' => $hint]);
+        $this->aiQuota->record($user, is_array($parsed['usage'] ?? null) ? $parsed['usage'] : null);
 
-        return $this->cognitionRequest('/parse', $this->payload($user) + ['text' => $message, 'hint' => $hint]);
+        return $parsed;
     }
 
     private function parseVoice(string $fileId, int $duration, int $declaredFileSize, User $user, ?string $context = null): array
@@ -405,10 +436,11 @@ class TelegramController extends Controller
             throw ValidationException::withMessages(['voice' => 'Áudio Muito Longo']);
         }
 
+        $this->aiQuota->consume($user);
         $url = $this->cognitionUrl('/parse-audio');
         $payload = $this->payload($user) + ['context' => $context ?: 'Mensagem recebida por áudio.'];
 
-        return Http::connectTimeout(5)->timeout(90)
+        return Http::cognition()->timeout(50)
             ->attach('file', $audio, 'telegram-voice.ogg', ['Content-Type' => 'audio/ogg'])
             ->post($url, array_map(
                 fn ($value) => is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE) : $value,
@@ -421,7 +453,7 @@ class TelegramController extends Controller
     {
         $url = $this->cognitionUrl($path);
 
-        return Http::connectTimeout(5)->timeout(60)->post($url, $payload)->throw()->json();
+        return Http::cognition()->timeout(30)->post($url, $payload)->throw()->json();
     }
 
     private function cognitionUrl(string $path): string
@@ -433,13 +465,9 @@ class TelegramController extends Controller
 
     private function payload(User $user): array
     {
+        // Chaves e modelos de IA ficam só no serviço Go.
         return [
             'categories' => Category::availableTo($user)->where('active', true)->get(['id', 'name', 'kind'])->toArray(),
-            'primary_provider' => SystemSetting::read('ai_primary_provider', 'gemini'),
-            'openai_api_key' => SystemSetting::read('openai_api_key'),
-            'openai_model' => SystemSetting::read('openai_model', 'gpt-5-mini'),
-            'gemini_api_key' => SystemSetting::read('gemini_api_key'),
-            'gemini_model' => SystemSetting::read('gemini_model', 'gemini-3.6-flash'),
         ];
     }
 
@@ -449,7 +477,7 @@ class TelegramController extends Controller
         if (($parsed['kind'] ?? null) === 'finance') {
             $description = Str::lower(Str::squish((string) ($data['description'] ?? '')));
 
-            return FinanceRecord::where('user_id', $user->id)
+            return FinanceRecord::personal()->where('user_id', $user->id)
                 ->where('type', $data['type'] ?? 'expense')
                 ->where('amount', abs((float) ($data['amount'] ?? 0)))
                 ->whereDate('occurred_on', $data['occurred_on'] ?? now()->toDateString())

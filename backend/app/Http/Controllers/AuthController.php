@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Consent;
 use App\Models\PendingRegistration;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -17,6 +18,8 @@ use RuntimeException;
 
 class AuthController extends Controller
 {
+    private const MAX_VERIFICATION_ATTEMPTS = 5;
+
     public function landing(): View
     {
         return view('landing');
@@ -51,29 +54,26 @@ class AuthController extends Controller
 
     public function register(Request $request): RedirectResponse
     {
-        $request->merge([
-            'cpf' => preg_replace('/\D+/', '', (string) $request->input('cpf')),
-        ]);
+        // CPF não é mais coletado (LGPD, princípio da necessidade).
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
-            'cpf' => ['required', 'string', 'max:14'],
             'email' => ['required', 'email', 'max:180'],
+            'accept_terms' => ['accepted'],
+        ], [
+            'accept_terms.accepted' => 'Para continuar, aceite os Termos de Uso e a Política de Privacidade.',
         ]);
+        unset($data['accept_terms']);
 
         $pendingRegistration = DB::transaction(function () use ($data) {
-            $this->deleteAbandonedLegacyRegistration($data['email'], $data['cpf']);
+            $this->deleteAbandonedLegacyRegistration($data['email']);
 
             Validator::make($data, [
-                'cpf' => [Rule::unique('users', 'cpf')],
                 'email' => [Rule::unique('users', 'email')],
             ], [
-                'cpf.unique' => 'Este CPF já está cadastrado.',
                 'email.unique' => 'Este e-mail já está cadastrado.',
             ])->validate();
 
-            PendingRegistration::where('email', $data['email'])
-                ->where('cpf', $data['cpf'])
-                ->delete();
+            PendingRegistration::where('email', $data['email'])->delete();
 
             return PendingRegistration::create($data + [
                 'verification_code' => $this->newRegistrationCode(),
@@ -83,6 +83,11 @@ class AuthController extends Controller
 
         $request->session()->forget(['pending_user_id', 'verified_user_id']);
         $request->session()->put('pending_registration_id', $pendingRegistration->id);
+        $request->session()->put('consent', [
+            'version' => Consent::CURRENT_VERSION,
+            'accepted_at' => now()->toIso8601String(),
+            'ip_hash' => hash('sha256', (string) $request->ip()),
+        ]);
 
         if (app()->environment(['local', 'testing'])) {
             $request->session()->flash('dev_code', $pendingRegistration->verification_code);
@@ -113,6 +118,11 @@ class AuthController extends Controller
             return back()->withErrors(['code' => 'O código expirou. Refaça o cadastro para receber outro.']);
         }
         $pendingRegistration->increment('verification_attempts');
+        if ($pendingRegistration->verification_attempts > self::MAX_VERIFICATION_ATTEMPTS) {
+            $pendingRegistration->update(['verification_code_expires_at' => now()]);
+
+            return back()->withErrors(['code' => 'Muitas tentativas. Gere um novo código para continuar.']);
+        }
         if (! hash_equals($pendingRegistration->verification_code, $data['code'])) {
             return back()->withErrors(['code' => 'Código incorreto.']);
         }
@@ -170,11 +180,9 @@ class AuthController extends Controller
 
         $user = DB::transaction(function () use ($data, $pendingRegistration) {
             Validator::make($pendingRegistration->getAttributes(), [
-                'cpf' => [Rule::unique('users', 'cpf')],
                 'email' => [Rule::unique('users', 'email')],
                 'telegram_user_id' => [Rule::unique('users', 'telegram_user_id')],
             ], [
-                'cpf.unique' => 'Este CPF foi cadastrado por outra conta enquanto o cadastro estava em andamento.',
                 'email.unique' => 'Este e-mail foi cadastrado por outra conta enquanto o cadastro estava em andamento.',
                 'telegram_user_id.unique' => 'Esta conta do Telegram já foi vinculada a outro cliente.',
             ])->validate();
@@ -187,7 +195,6 @@ class AuthController extends Controller
             $user = User::create([
                 'name' => $pendingRegistration->name,
                 'email' => $pendingRegistration->email,
-                'cpf' => $pendingRegistration->cpf,
                 'telegram' => $telegram,
                 'telegram_chat_id' => $pendingRegistration->telegram_chat_id,
                 'telegram_user_id' => $pendingRegistration->telegram_user_id,
@@ -201,6 +208,17 @@ class AuthController extends Controller
 
             return $user;
         });
+
+        $consent = (array) $request->session()->pull('consent', []);
+        foreach (['terms', 'privacy'] as $document) {
+            Consent::create([
+                'user_id' => $user->id,
+                'document' => $document,
+                'version' => $consent['version'] ?? Consent::CURRENT_VERSION,
+                'accepted_at' => $consent['accepted_at'] ?? now(),
+                'ip_hash' => $consent['ip_hash'] ?? hash('sha256', (string) $request->ip()),
+            ]);
+        }
 
         $request->session()->forget([
             'pending_registration_id',
@@ -252,10 +270,9 @@ class AuthController extends Controller
         throw new RuntimeException('Não foi possível gerar um código de cadastro exclusivo.');
     }
 
-    private function deleteAbandonedLegacyRegistration(string $email, string $cpf): void
+    private function deleteAbandonedLegacyRegistration(string $email): void
     {
         $legacyUser = User::where('email', $email)
-            ->where('cpf', $cpf)
             ->where('role', 'client')
             ->where('status', 'pending')
             ->first();

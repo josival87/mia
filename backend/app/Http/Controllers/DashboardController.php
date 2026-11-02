@@ -12,7 +12,7 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $month = $this->month($request->input('month'));
-        $finances = FinanceRecord::where('user_id', $request->user()->id)
+        $finances = FinanceRecord::personal()->where('user_id', $request->user()->id)
             ->whereBetween('occurred_on', [$month->copy()->startOfMonth(), $month->copy()->endOfMonth()]);
         $income = (clone $finances)->where('type', 'income')->sum('amount');
         $expense = (clone $finances)->where('type', 'expense')->sum('amount');

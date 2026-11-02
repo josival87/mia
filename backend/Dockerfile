@@ -1,18 +1,17 @@
-FROM php:8.4-cli-bookworm
+# Servidor de produção: FrankenPHP (Caddy + PHP) no modo clássico, no lugar do `php artisan serve`.
+FROM dunglas/frankenphp:1-php8.4-bookworm
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev libicu-dev unzip \
-    && docker-php-ext-install pdo_pgsql intl pcntl \
-    && rm -rf /var/lib/apt/lists/*
+RUN install-php-extensions pdo_pgsql intl pcntl opcache
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-WORKDIR /var/www/html
+WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader
 COPY . .
 RUN composer dump-autoload --no-dev --optimize \
-    && chmod +x /var/www/html/docker/entrypoint.sh \
+    && chmod +x /app/docker/entrypoint.sh \
     && chown -R www-data:www-data storage bootstrap/cache
 
+ENV SERVER_NAME=:8000
 EXPOSE 8000
-ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

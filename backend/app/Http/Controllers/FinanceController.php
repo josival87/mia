@@ -69,7 +69,7 @@ class FinanceController extends Controller
         } catch (\Throwable) {
             $month = now()->startOfMonth();
         }
-        $query = FinanceRecord::where('user_id', $request->user()->id)->whereBetween('occurred_on', [$month->copy()->startOfMonth(), $month->copy()->endOfMonth()]);
+        $query = FinanceRecord::personal()->where('user_id', $request->user()->id)->whereBetween('occurred_on', [$month->copy()->startOfMonth(), $month->copy()->endOfMonth()]);
         $selectedCategoryId = $this->categoryFilter($request);
         $recordQuery = clone $query;
         $selectedType = $this->typeFilter($request);
@@ -198,5 +198,7 @@ class FinanceController extends Controller
     private function authorizeOwner(Request $request, FinanceRecord $record): void
     {
         abort_unless($record->user_id === $request->user()->id, 403);
+        // Lançamentos do Plano B são editados na tela do negócio.
+        abort_if($record->business_id !== null, 404);
     }
 }

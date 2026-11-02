@@ -7,7 +7,9 @@ use App\Models\Task;
 use App\Observers\FinanceRecordObserver;
 use App\Observers\TaskObserver;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -28,6 +30,24 @@ class AppServiceProvider extends ServiceProvider
     {
         FinanceRecord::observe(FinanceRecordObserver::class);
         Task::observe(TaskObserver::class);
+
+        // Cliente HTTP para o serviço Go: sempre autenticado, nunca envia chaves de IA.
+        Http::macro('cognition', function (): PendingRequest {
+            return Http::withHeaders(['X-Internal-Token' => (string) config('services.cognition.token')])
+                ->connectTimeout(5)
+                ->acceptJson();
+        });
+
+        RateLimiter::for('login', function (Request $request): array {
+            $email = mb_strtolower((string) $request->input('email'));
+
+            return [
+                Limit::perMinute(5)->by('login:'.hash('sha256', $email.'|'.$request->ip())),
+                Limit::perMinute(20)->by('login-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('verification', fn (Request $request): Limit => Limit::perMinute(10)->by('verify:'.$request->ip()));
 
         RateLimiter::for('telegram-webhook', function (Request $request): Limit {
             $telegramUserId = (string) (data_get($request->input('message'), 'from.id')

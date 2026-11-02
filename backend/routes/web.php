@@ -8,19 +8,22 @@ use App\Http\Controllers\CategoryGoalController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FinanceController;
 use App\Http\Controllers\IphoneIntegrationController;
+use App\Http\Controllers\PlanBController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TelegramConnectionController;
 use App\Http\Controllers\TelegramController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [AuthController::class, 'landing'])->name('landing');
+Route::view('/termos', 'legal.terms')->name('legal.terms');
+Route::view('/privacidade', 'legal.privacy')->name('legal.privacy');
 Route::middleware('guest')->group(function () {
     Route::get('/entrar', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/entrar', [AuthController::class, 'login'])->name('login.store');
+    Route::post('/entrar', [AuthController::class, 'login'])->middleware('throttle:login')->name('login.store');
     Route::get('/cadastro', [AuthController::class, 'showRegister'])->name('register');
     Route::post('/cadastro', [AuthController::class, 'register'])->name('register.store');
     Route::get('/verificar-telegram', [AuthController::class, 'showVerification'])->name('verification.show');
-    Route::post('/verificar-telegram', [AuthController::class, 'verify'])->name('verification.verify');
+    Route::post('/verificar-telegram', [AuthController::class, 'verify'])->middleware('throttle:verification')->name('verification.verify');
     Route::post('/verificar-telegram/novo-codigo', [AuthController::class, 'renewVerification'])->middleware('throttle:3,1')->name('verification.renew');
     Route::get('/criar-senha', [AuthController::class, 'showCreatePassword'])->name('password.create');
     Route::post('/criar-senha', [AuthController::class, 'createPassword'])->name('password.store');
@@ -45,6 +48,21 @@ Route::middleware('auth')->group(function () {
     Route::post('/telegram/reconectar', [TelegramConnectionController::class, 'reconnect'])->name('telegram.reconnect');
     Route::delete('/telegram', [TelegramConnectionController::class, 'disconnect'])->name('telegram.disconnect');
     Route::post('/iphone/chave', [IphoneIntegrationController::class, 'store'])->name('iphone.token.store');
+    Route::prefix('plano-b')->name('planb.')->controller(PlanBController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::get('/novo', 'create')->name('create');
+        Route::post('/', 'store')->name('store');
+        Route::get('/{business}', 'show')->name('show');
+        Route::post('/{business}/arquivar', 'archive')->name('archive');
+        Route::post('/{business}/turnos', 'storeShift')->name('shifts.store');
+        Route::post('/{business}/lancamentos', 'storeEntry')->name('entries.store');
+        Route::delete('/{business}/lancamentos/{record}', 'destroyEntry')->name('entries.destroy');
+        Route::post('/{business}/projetos', 'storeProject')->name('projects.store');
+        Route::post('/{business}/projetos/{project}/horas', 'storeTime')->name('projects.time');
+        Route::post('/{business}/recebiveis/{receivable}/pago', 'payReceivable')->name('receivables.pay');
+        Route::post('/{business}/retirada', 'withdraw')->name('withdraw');
+        Route::post('/{business}/avaliar-corrida', 'evaluateRide')->name('ride');
+    });
     Route::delete('/iphone/chave', [IphoneIntegrationController::class, 'destroy'])->name('iphone.token.destroy');
 });
 

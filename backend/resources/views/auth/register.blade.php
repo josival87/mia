@@ -7,8 +7,9 @@
         <a class="mobile-auth-brand brand" href="{{ route('landing') }}"><span class="brand-mark">M</span><span>Mia</span></a><span class="auth-kicker">PASSO 1 DE 3</span><h2>Vamos criar sua conta</h2><p>Preencha seus dados. No próximo passo, o próprio Telegram informará seu ID permanente à Mia.</p>
         @if($errors->any())<div class="alert error"><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
         <form method="POST" action="{{ route('register.store') }}" class="stack-form">@csrf
-            <div class="form-grid"><label>Nome completo<input name="name" value="{{ old('name') }}" placeholder="Como podemos chamar você?" required></label><label>CPF<input name="cpf" value="{{ old('cpf') }}" placeholder="000.000.000-00" data-mask="cpf" required></label></div>
+            <label>Nome completo<input name="name" value="{{ old('name') }}" placeholder="Como podemos chamar você?" required></label>
             <label>E-mail<input type="email" name="email" value="{{ old('email') }}" placeholder="voce@exemplo.com" required></label>
+            <label class="checkbox-line"><input type="checkbox" name="accept_terms" value="1" @checked(old('accept_terms')) required> <span>Li e aceito os <a href="{{ route('legal.terms') }}" target="_blank">Termos de Uso</a> e a <a href="{{ route('legal.privacy') }}" target="_blank">Política de Privacidade</a>.</span></label>
             <button class="btn btn-primary btn-block" type="submit">Continuar para validação <span>→</span></button>
         </form><p class="auth-switch">Já possui uma conta? <a href="{{ route('login') }}">Entrar</a></p>
     </div></section>

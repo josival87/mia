@@ -2,6 +2,14 @@
 
 Sistema web mobile-first para gestão financeira e de atividades, com administração, categorias personalizadas e lançamentos por texto ou áudio via Telegram.
 
+## Produção (Day 0)
+
+1. `cp .env.example .env` e preencha **todos** os segredos (`APP_KEY`, `DB_PASSWORD`, `COGNITION_INTERNAL_TOKEN`, `MIA_ADMIN_PASSWORD`, `TELEGRAM_WEBHOOK_SECRET`). O compose de produção se recusa a subir se faltar algum.
+2. Chaves de IA vão no `.env` (lidas só pelo Go). As chaves antigas salvas no admin deixaram de ser usadas.
+3. `docker compose -f docker-compose.prod.yml up -d --build`
+4. Remova o cliente demo de bancos já populados: `docker compose -f docker-compose.prod.yml exec app php artisan mia:remove-demo-user`
+5. Revise e preencha os campos entre colchetes em `/termos` e `/privacidade` antes de abrir para usuários.
+
 ## Executar com Docker
 
 Pré-requisito: Docker Desktop em execução.
@@ -12,7 +20,9 @@ docker compose up --build -d
 
 Acesse [http://localhost:8088](http://localhost:8088).
 
-Contas iniciais:
+Crie o `.env` a partir do `.env.example` (APP_KEY e COGNITION_INTERNAL_TOKEN são obrigatórios também em desenvolvimento).
+
+Contas iniciais (somente fora de produção):
 
 - Administrador: `admin@mia.local` / `Mia@12345`
 - Cliente de demonstração: `cliente@mia.local` / `Mia@12345`
@@ -23,7 +33,9 @@ O banco PostgreSQL é migrado e populado automaticamente quando o container da a
 
 - `app`: Laravel 13, interface web, autenticação, regras de negócio e webhook do Telegram.
 - `telegram-worker`: processo permanente que recebe mensagens por polling no ambiente local.
-- `cognition`: FastAPI, parser local e conectores opcionais de OpenAI/Gemini.
+- `cognition`: serviço Go (`mia-conition/`), autenticado por token interno. Guarda as chaves de IA e roteia em cascata de custo zero: parser local → Qwen local (opcional) → Groq → Cerebras → Gemini pago → OpenAI.
+- `queue-worker`: processa as mensagens do Telegram fora da requisição HTTP.
+- `llm` (opcional, perfil `local-llm`): llama.cpp servindo um Qwen quantizado de `./models`.
 - `postgres`: PostgreSQL 17.
 
 ## Funcionalidades

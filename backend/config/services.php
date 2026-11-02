@@ -44,6 +44,10 @@ return [
 
     'cognition' => [
         'url' => env('COGNITION_URL', 'http://cognition:8000'),
+        // Token compartilhado com o serviço Go (header X-Internal-Token). Mínimo de 32 caracteres.
+        'token' => env('COGNITION_INTERNAL_TOKEN'),
+        // Mensagens interpretadas por IA por usuário por dia (comandos rápidos do Plano B não contam).
+        'daily_user_limit' => (int) env('AI_DAILY_LIMIT_PER_USER', 50),
         'allowed_hosts' => array_values(array_filter(array_map(
             'trim',
             explode(',', env('COGNITION_ALLOWED_HOSTS', 'cognition,localhost,127.0.0.1')),

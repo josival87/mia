@@ -92,6 +92,28 @@ class RecordSafetyTest extends TestCase
             && str_contains((string) $request['text'], 'Valor: R$ 580,00'));
     }
 
+    public function test_cognition_calls_are_authenticated_and_never_carry_ai_keys(): void
+    {
+        config(['services.cognition.token' => str_repeat('t', 40)]);
+        SystemSetting::write('gemini_api_key', 'gemini-secret-that-must-not-leave', true);
+        $client = $this->configuredTelegramClient();
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://cognition:8000/parse' => Http::response([
+                'kind' => 'finance', 'confidence' => 0.99, 'provider' => 'local',
+                'data' => ['type' => 'expense', 'description' => 'Almoço', 'amount' => 15, 'occurred_on' => '2026-09-08', 'category_id' => null],
+            ]),
+            'https://api.telegram.org/bot*/sendMessage' => Http::response(['ok' => true]),
+        ]);
+
+        $this->postTelegramUpdate($client, ['text' => 'almoço 15'])->assertOk();
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://cognition:8000/parse'
+            && $request->header('X-Internal-Token') === [str_repeat('t', 40)]
+            && ! str_contains($request->body(), 'gemini-secret-that-must-not-leave')
+            && ! isset($request['gemini_api_key'], $request['openai_api_key']));
+    }
+
     public function test_untrusted_ai_destination_is_blocked_before_keys_can_be_sent(): void
     {
         $client = $this->configuredTelegramClient();

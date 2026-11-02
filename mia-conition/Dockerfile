@@ -1,21 +1,15 @@
-# ---- Stage 1: Builder ----
+# ---- Build ----
 FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY *.go ./
+# -mod=mod completa o go.sum se faltar alguma entrada, sem reescrever dependências como o go mod tidy.
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -trimpath -ldflags="-s -w" -o /out/api .
 
-WORKDIR /app
-
-COPY . .
-RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api .
-
-# ---- Stage 2: Runtime ----
-FROM alpine:latest
-
-RUN apk add --no-cache ca-certificates tzdata wget
-
-WORKDIR /app
-
-COPY --from=builder /app/api .
-
+# ---- Runtime: sem shell, sem root ----
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/api /api
 EXPOSE 8000
-
-CMD ["./api"]
+USER nonroot:nonroot
+ENTRYPOINT ["/api"]

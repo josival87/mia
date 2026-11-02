@@ -52,7 +52,7 @@ class CategoryGoalProgressService
         $remainder = $monthlyCents % count($segments);
         $weeklyTargetCents = $baseWeeklyCents + ($segmentIndex < $remainder ? 1 : 0);
 
-        $spentCents = $this->toCents(FinanceRecord::query()
+        $spentCents = $this->toCents(FinanceRecord::query()->personal()
             ->where('user_id', $goal->user_id)
             ->where('category_id', $goal->category_id)
             ->where('type', 'expense')

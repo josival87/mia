@@ -1,13 +1,25 @@
 #!/bin/sh
 set -e
 
+if [ -z "$APP_KEY" ]; then
+  echo "APP_KEY ausente. Gere uma com: php artisan key:generate --show" >&2
+  exit 1
+fi
+
 echo "Aguardando o PostgreSQL e executando migrações..."
 until php artisan migrate --force; do
   sleep 2
 done
 
-php artisan db:seed --force
-php artisan optimize:clear
+if [ "$APP_ENV" = "production" ]; then
+  # Em produção: só categorias, menus e admin (sem cliente demo). Exige MIA_ADMIN_PASSWORD forte.
+  php artisan db:seed --force
+  php artisan optimize
+else
+  php artisan db:seed --force
+  php artisan optimize:clear
+fi
+
 php artisan mia:telegram-sync --webhook-only || true
 
-exec php artisan serve --host=0.0.0.0 --port=8000
+exec frankenphp php-server --listen :8000 --root public/

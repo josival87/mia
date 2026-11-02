@@ -1,0 +1,139 @@
+# Produção. Nenhum segredo tem valor padrão: o compose falha se faltar algum.
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+name: mia
+
+x-app-environment: &app-environment
+  APP_NAME: "Mia Assistente"
+  APP_ENV: production
+  APP_KEY: "${APP_KEY:?Defina APP_KEY no .env (php artisan key:generate --show)}"
+  APP_DEBUG: "false"
+  APP_URL: "${APP_URL:?Defina APP_URL}"
+  APP_LOCALE: pt_BR
+  APP_FALLBACK_LOCALE: pt_BR
+  APP_TIMEZONE: America/Sao_Paulo
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: warning
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_DATABASE: mia
+  DB_USERNAME: mia
+  DB_PASSWORD: "${DB_PASSWORD:?Defina DB_PASSWORD}"
+  SESSION_DRIVER: database
+  SESSION_COOKIE: "${SESSION_COOKIE:-mia_production_session}"
+  SESSION_PATH: "${SESSION_PATH:-/}"
+  SESSION_SECURE_COOKIE: "true"
+  CACHE_STORE: database
+  QUEUE_CONNECTION: database
+  COGNITION_URL: "http://cognition:8000"
+  COGNITION_INTERNAL_TOKEN: "${COGNITION_INTERNAL_TOKEN:?Defina COGNITION_INTERNAL_TOKEN (32+ caracteres)}"
+  AI_DAILY_LIMIT_PER_USER: "${AI_DAILY_LIMIT_PER_USER:-50}"
+  TELEGRAM_UPDATE_MODE: webhook
+  TELEGRAM_WEBHOOK_URL: "${TELEGRAM_WEBHOOK_URL:-}"
+  TELEGRAM_WEBHOOK_SECRET: "${TELEGRAM_WEBHOOK_SECRET:?Defina TELEGRAM_WEBHOOK_SECRET}"
+  ALUGAPRO_FINANCE_API_KEY: "${ALUGAPRO_FINANCE_API_KEY:-}"
+  DASHPAY_FINANCE_API_KEY: "${DASHPAY_FINANCE_API_KEY:-}"
+  MIA_ADMIN_EMAIL: "${MIA_ADMIN_EMAIL:?Defina MIA_ADMIN_EMAIL}"
+  MIA_ADMIN_PASSWORD: "${MIA_ADMIN_PASSWORD:?Defina MIA_ADMIN_PASSWORD (12+ caracteres)}"
+
+x-cognition-environment: &cognition-environment
+  INTERNAL_API_TOKEN: "${COGNITION_INTERNAL_TOKEN}"
+  AI_PROVIDER_ORDER: "${AI_PROVIDER_ORDER:-local,groq,cerebras,gemini,openai}"
+  LOCAL_LLM_URL: "${LOCAL_LLM_URL:-}"
+  LOCAL_LLM_MODEL: "${LOCAL_LLM_MODEL:-qwen3.5-2b}"
+  GROQ_API_KEY: "${GROQ_API_KEY:-}"
+  GROQ_DAILY_LIMIT: "${GROQ_DAILY_LIMIT:-950}"
+  CEREBRAS_API_KEY: "${CEREBRAS_API_KEY:-}"
+  CEREBRAS_DAILY_LIMIT: "${CEREBRAS_DAILY_LIMIT:-600}"
+  GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+  GEMINI_PAID_TIER: "${GEMINI_PAID_TIER:-false}"
+  GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  GOMEMLIMIT: 400MiB
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mia
+      POSTGRES_USER: mia
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?Defina DB_PASSWORD}"
+    volumes:
+      - mia_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mia -d mia"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  cognition:
+    build: ./mia-conition
+    environment: *cognition-environment
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "/api", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # Qwen local (opcional): docker compose --profile local-llm up -d
+  # Coloque o arquivo .gguf em ./models e aponte LOCAL_LLM_URL=http://llm:8080/v1
+  llm:
+    profiles: ["local-llm"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: ["-m", "/models/${LOCAL_LLM_MODEL_FILE:-qwen3.5-2b-q4_k_m.gguf}", "--host", "0.0.0.0", "--port", "8080", "-c", "4096", "-t", "${LOCAL_LLM_THREADS:-2}", "--parallel", "1"]
+    volumes:
+      - ./models:/models:ro
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+    restart: unless-stopped
+
+  app:
+    image: mia-app
+    build: ./backend
+    ports:
+      - "127.0.0.1:${APP_PORT:-18088}:8000"
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cognition:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost:8000/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Processa as mensagens do Telegram fora da requisição HTTP.
+  queue-worker:
+    image: mia-app
+    entrypoint: ["php", "artisan", "queue:work", "--sleep=1", "--tries=1", "--timeout=120", "--max-time=3600"]
+    environment: *app-environment
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 130s
+
+  # Agendamentos: resumo semanal do Plano B, lembretes de recebíveis e limpeza.
+  scheduler:
+    image: mia-app
+    entrypoint: ["php", "artisan", "schedule:work"]
+    environment: *app-environment
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mia_postgres_data:

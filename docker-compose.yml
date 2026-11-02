@@ -1,9 +1,10 @@
+# Desenvolvimento local. Produção: docker compose -f docker-compose.prod.yml up -d
 name: mia
 
 x-app-environment: &app-environment
   APP_NAME: "Mia Assistente"
   APP_ENV: "${APP_ENV:-local}"
-  APP_KEY: "${APP_KEY:-base64:Z8iAbJxJqhOzLNS7v6lY3gfAxT8jHorrRZTHmplZwlo=}"
+  APP_KEY: "${APP_KEY:?Defina APP_KEY no .env (php artisan key:generate --show)}"
   APP_DEBUG: "${APP_DEBUG:-true}"
   APP_URL: "${APP_URL:-http://localhost:8088}"
   APP_LOCALE: pt_BR
@@ -23,6 +24,8 @@ x-app-environment: &app-environment
   CACHE_STORE: database
   QUEUE_CONNECTION: database
   COGNITION_URL: "http://cognition:8000"
+  COGNITION_INTERNAL_TOKEN: "${COGNITION_INTERNAL_TOKEN:?Defina COGNITION_INTERNAL_TOKEN (32+ caracteres)}"
+  AI_DAILY_LIMIT_PER_USER: "${AI_DAILY_LIMIT_PER_USER:-50}"
   TELEGRAM_UPDATE_MODE: "${TELEGRAM_UPDATE_MODE:-polling}"
   TELEGRAM_WEBHOOK_URL: "${TELEGRAM_WEBHOOK_URL:-}"
   TELEGRAM_WEBHOOK_SECRET: "${TELEGRAM_WEBHOOK_SECRET:-}"
@@ -32,6 +35,21 @@ x-app-environment: &app-environment
   MIA_ADMIN_PASSWORD: "${MIA_ADMIN_PASSWORD:-Mia@12345}"
   MIA_DEMO_EMAIL: "${MIA_DEMO_EMAIL:-cliente@mia.local}"
   MIA_DEMO_PASSWORD: "${MIA_DEMO_PASSWORD:-Mia@12345}"
+
+x-cognition-environment: &cognition-environment
+  INTERNAL_API_TOKEN: "${COGNITION_INTERNAL_TOKEN}"
+  AI_PROVIDER_ORDER: "${AI_PROVIDER_ORDER:-local,groq,cerebras,gemini,openai}"
+  LOCAL_LLM_URL: "${LOCAL_LLM_URL:-}"
+  LOCAL_LLM_MODEL: "${LOCAL_LLM_MODEL:-qwen3.5-2b}"
+  GROQ_API_KEY: "${GROQ_API_KEY:-}"
+  GROQ_DAILY_LIMIT: "${GROQ_DAILY_LIMIT:-950}"
+  CEREBRAS_API_KEY: "${CEREBRAS_API_KEY:-}"
+  CEREBRAS_DAILY_LIMIT: "${CEREBRAS_DAILY_LIMIT:-600}"
+  GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+  GEMINI_PAID_TIER: "${GEMINI_PAID_TIER:-false}"
+  GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  GOMEMLIMIT: 400MiB
 
 services:
   postgres:
@@ -51,28 +69,38 @@ services:
 
   cognition:
     build: ./mia-conition
-    environment:
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GOMEMLIMIT=3500MiB
-      - GOMAXPROCS=1
+    environment: *cognition-environment
     deploy:
       resources:
         limits:
           cpus: '1.0'
-          memory: 3800M
+          memory: 512M
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      test: ["CMD", "/api", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  # Qwen local (opcional): docker compose --profile local-llm up -d
+  # Coloque o arquivo .gguf em ./models e aponte LOCAL_LLM_URL=http://llm:8080/v1
+  llm:
+    profiles: ["local-llm"]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: ["-m", "/models/${LOCAL_LLM_MODEL_FILE:-qwen3.5-2b-q4_k_m.gguf}", "--host", "0.0.0.0", "--port", "8080", "-c", "4096", "-t", "${LOCAL_LLM_THREADS:-2}", "--parallel", "1"]
+    volumes:
+      - ./models:/models:ro
+    deploy:
+      resources:
+        limits:
+          memory: 3G
     restart: unless-stopped
 
   app:
     image: mia-app
     build: ./backend
     ports:
-      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-8088}:8000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8088}:8000"
     environment: *app-environment
     depends_on:
       postgres:
@@ -86,6 +114,17 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # Processa as mensagens do Telegram fora da requisição HTTP.
+  queue-worker:
+    image: mia-app
+    entrypoint: ["php", "artisan", "queue:work", "--sleep=1", "--tries=1", "--timeout=120", "--max-time=3600"]
+    environment: *app-environment
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 130s
+
   telegram-worker:
     image: mia-app
     entrypoint: ["php", "artisan", "mia:telegram-poll"]
@@ -93,12 +132,18 @@ services:
     depends_on:
       app:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
-      cognition:
-        condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 40s
+
+  # Agendamentos: resumo semanal do Plano B, lembretes de recebíveis e limpeza.
+  scheduler:
+    image: mia-app
+    entrypoint: ["php", "artisan", "schedule:work"]
+    environment: *app-environment
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   mia_postgres_data:

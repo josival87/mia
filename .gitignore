@@ -6,3 +6,4 @@
 /backend/storage/logs/*.log
 __pycache__/
 *.pyc
+/models/

@@ -4,7 +4,9 @@ use App\Models\SystemSetting;
 use App\Services\RecordSafety;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -27,23 +29,13 @@ Artisan::command('mia:configure-gemini', function (): int {
 })->purpose('Salva uma chave Gemini criptografada sem exibi-la no terminal');
 
 Artisan::command('mia:test-ai', function (): int {
-    $apiKey = SystemSetting::read('gemini_api_key');
-    if (! $apiKey) {
-        $this->error('Nenhuma chave Gemini está configurada.');
-
-        return 1;
-    }
-
     $url = app(RecordSafety::class)->trustedCognitionBaseUrl(
         (string) SystemSetting::read('cognition_url', config('services.cognition.url')),
     ).'/parse';
-    $response = Http::connectTimeout(5)->timeout(60)->post($url, [
+    $response = Http::cognition()->timeout(30)->post($url, [
         'text' => 'Paguei R$ 12,50 em um café hoje.',
         'hint' => 'finance',
         'categories' => [],
-        'primary_provider' => 'gemini',
-        'gemini_api_key' => $apiKey,
-        'gemini_model' => SystemSetting::read('gemini_model', 'gemini-3.6-flash'),
     ]);
 
     if (! $response->successful()) {
@@ -52,14 +44,8 @@ Artisan::command('mia:test-ai', function (): int {
         return 1;
     }
 
-    $provider = (string) data_get($response->json(), 'provider', 'desconhecido');
-    if ($provider !== 'gemini') {
-        $this->error('O Gemini não respondeu; o serviço usou o provedor '.$provider.'.');
-
-        return 2;
-    }
-
-    $this->info('Integração validada: o Gemini interpretou o texto com sucesso.');
+    $provider = (string) data_get($response->json(), 'usage.provider', data_get($response->json(), 'provider', 'desconhecido'));
+    $this->info('Integração validada: o texto foi interpretado pelo provedor '.$provider.'.');
 
     return 0;
 })->purpose('Valida a chave Gemini configurada sem exibi-la');
@@ -83,24 +69,14 @@ Artisan::command('mia:test-audio {file} {--duration= : Duração verificada do �
         return 1;
     }
 
-    $apiKey = SystemSetting::read('gemini_api_key');
-    if (! $apiKey) {
-        $this->error('Nenhuma chave Gemini está configurada.');
-
-        return 1;
-    }
-
     $url = app(RecordSafety::class)->trustedCognitionBaseUrl(
         (string) SystemSetting::read('cognition_url', config('services.cognition.url')),
     ).'/parse-audio';
-    $response = Http::connectTimeout(5)->timeout(90)
+    $response = Http::cognition()->timeout(50)
         ->attach('file', file_get_contents($file), basename($file), ['Content-Type' => 'audio/ogg'])
         ->post($url, [
             'categories' => '[]',
             'duration_seconds' => $duration,
-            'primary_provider' => 'gemini',
-            'gemini_api_key' => $apiKey,
-            'gemini_model' => SystemSetting::read('gemini_model', 'gemini-3.6-flash'),
         ]);
 
     if (! $response->successful()) {
@@ -109,13 +85,18 @@ Artisan::command('mia:test-audio {file} {--duration= : Duração verificada do �
         return 1;
     }
 
-    if (data_get($response->json(), 'audio_provider') !== 'gemini') {
-        $this->error('O áudio não foi interpretado diretamente pelo Gemini.');
-
-        return 2;
-    }
-
-    $this->info('Integração validada: o Gemini interpretou o áudio com sucesso.');
+    $this->info('Integração validada: áudio interpretado via '.data_get($response->json(), 'audio_provider', 'desconhecido').'.');
 
     return 0;
 })->purpose('Valida a interpretação de um arquivo de áudio pelo Gemini');
+
+// ---- Agendamentos (container `scheduler`: php artisan schedule:work) ----
+Schedule::command('mia:planb-notify --weekly')->weeklyOn(0, '20:00')->timezone('America/Sao_Paulo')->withoutOverlapping();
+Schedule::command('mia:planb-notify --reminders')->dailyAt('09:00')->timezone('America/Sao_Paulo')->withoutOverlapping();
+Schedule::command('queue:prune-failed --hours=720')->daily();
+Schedule::call(function (): void {
+    DB::table('processed_telegram_updates')->where('created_at', '<', now()->subDays(7))->delete();
+    DB::table('pending_registrations')->where('verification_code_expires_at', '<', now()->subDay())->delete();
+    DB::table('pending_telegram_records')->where('expires_at', '<', now()->subDays(30))->delete();
+    DB::table('sessions')->where('last_activity', '<', now()->subDays(30)->getTimestamp())->delete();
+})->name('mia:limpeza-diaria')->dailyAt('03:30')->withoutOverlapping();

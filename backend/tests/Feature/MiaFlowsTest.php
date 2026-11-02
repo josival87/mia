@@ -148,7 +148,7 @@ class MiaFlowsTest extends TestCase
         $email = "nova-{$suffix}@example.test";
         $this->post(route('register.store'), [
             'name' => 'Nova Cliente',
-            'cpf' => '98765432100',
+            'accept_terms' => '1',
             'email' => $email,
         ])->assertRedirect(route('verification.show'))->assertSessionHas('pending_registration_id');
 
@@ -188,6 +188,8 @@ class MiaFlowsTest extends TestCase
         $this->assertSame('active', $user->fresh()->status);
         $this->assertSame('991010', $user->fresh()->telegram_user_id);
         $this->assertDatabaseMissing('pending_registrations', ['id' => $pendingRegistration->id]);
+        $this->assertSame(2, \App\Models\Consent::where('user_id', $user->id)->count());
+        $this->assertNull($user->fresh()->cpf);
     }
 
     public function test_registration_does_not_advance_to_password_before_telegram_is_connected(): void
@@ -196,7 +198,7 @@ class MiaFlowsTest extends TestCase
         $email = "sem-telegram-{$suffix}@example.test";
         $this->post(route('register.store'), [
             'name' => 'Cliente sem Telegram',
-            'cpf' => '15975348600',
+            'accept_terms' => '1',
             'email' => $email,
         ])->assertRedirect(route('verification.show'));
         $pendingRegistration = PendingRegistration::where('email', $email)->firstOrFail();
@@ -218,7 +220,7 @@ class MiaFlowsTest extends TestCase
         $email = "retomada-{$suffix}@example.test";
         $data = [
             'name' => 'Cliente Retomada',
-            'cpf' => '65432198700',
+            'accept_terms' => '1',
             'email' => $email,
         ];
 
@@ -228,7 +230,7 @@ class MiaFlowsTest extends TestCase
         $this->post(route('register.store'), $data)->assertRedirect(route('verification.show'));
 
         $this->assertDatabaseMissing('users', ['email' => $email]);
-        $this->assertSame(1, PendingRegistration::where('email', $email)->where('cpf', $data['cpf'])->count());
+        $this->assertSame(1, PendingRegistration::where('email', $email)->count());
         $this->assertNotSame($firstPendingId, PendingRegistration::where('email', $email)->value('id'));
     }
 
@@ -253,12 +255,12 @@ class MiaFlowsTest extends TestCase
 
         $this->post(route('register.store'), [
             'name' => 'Cliente Legado',
-            'cpf' => '741.852.963-00',
+            'accept_terms' => '1',
             'email' => $email,
         ])->assertRedirect(route('verification.show'));
 
         $this->assertDatabaseMissing('users', ['id' => $legacyUser->id]);
-        $this->assertDatabaseHas('pending_registrations', ['email' => $email, 'cpf' => '74185296300']);
+        $this->assertDatabaseHas('pending_registrations', ['email' => $email, 'cpf' => null]);
     }
 
     public function test_conflicting_connection_code_does_not_link_telegram_to_the_wrong_registration(): void
@@ -267,7 +269,7 @@ class MiaFlowsTest extends TestCase
         $email = "conflito-{$suffix}@example.test";
         $this->post(route('register.store'), [
             'name' => 'Cliente Conflito',
-            'cpf' => '35795148600',
+            'accept_terms' => '1',
             'email' => $email,
         ])->assertRedirect(route('verification.show'));
         $pendingRegistration = PendingRegistration::where('email', $email)->firstOrFail();

@@ -20,6 +20,9 @@ class CategoryGoalAlertService
      */
     public function evaluateRecord(FinanceRecord $record): ?array
     {
+        if ($record->business_id !== null) {
+            return null; // metas pessoais ignoram custos do Plano B
+        }
         $progress = $this->progressService->forRecord($record);
         if (! $progress) {
             return null;
