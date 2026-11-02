@@ -18,6 +18,7 @@
     $clientNav = [
         ['route' => 'dashboard', 'match' => 'dashboard', 'label' => 'Início', 'icon' => 'grid'],
         ['route' => 'finance.index', 'match' => 'finance.*', 'label' => 'Financeiro', 'icon' => 'wallet'],
+        ['route' => 'credit-cards.index', 'match' => 'credit-card*', 'label' => 'Cartões', 'icon' => 'card'],
         ['route' => 'tasks.index', 'match' => 'tasks.*', 'label' => 'Atividades', 'icon' => 'tasks'],
         ['route' => 'categories.index', 'match' => 'categories.*', 'label' => 'Categorias', 'icon' => 'tag'],
         ['route' => 'telegram.connection', 'match' => 'telegram.*', 'label' => 'Telegram', 'icon' => 'bot'],
@@ -35,6 +36,7 @@
 <svg aria-hidden="true" class="svg-sprite">
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
     <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7h15a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a3 3 0 0 1 3-3h13v4"/><path d="M16 12h5v4h-5a2 2 0 0 1 0-4Z"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/></symbol>
     <symbol id="i-tasks" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 10 2 2 4-4M14 11h3M7 16h10"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20 13 11 22 2 13V2h11l7 7a3 3 0 0 1 0 4Z"/><circle cx="7" cy="7" r="1.5"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>

@@ -145,11 +145,26 @@
     <div class="modal-backdrop" data-modal-close></div>
     <div class="modal-card">
         <div class="modal-heading"><div><span class="page-kicker">{{ $editRecord ? 'EDITANDO' : 'NOVO REGISTRO' }}</span><h2>{{ $editRecord ? 'Editar lançamento' : 'Novo lançamento' }}</h2></div><button type="button" data-modal-close aria-label="Fechar">×</button></div>
-        <form method="POST" action="{{ $editRecord ? route('finance.update', ['finance' => $editRecord, 'month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) : route('finance.store') }}" class="stack-form" data-category-form>@csrf @if($editRecord)@method('PUT')@endif
+        <form method="POST" action="{{ $editRecord ? route('finance.update', ['finance' => $editRecord, 'month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) : route('finance.store') }}" class="stack-form" data-category-form {{ $editRecord ? '' : 'data-card-purchase-form' }}>@csrf @if($editRecord)@method('PUT')@endif
             <div class="segmented"><label><input type="radio" name="type" value="expense" {{ old('type', $editRecord?->type ?? 'expense') === 'expense' ? 'checked' : '' }}><span>Saída</span></label><label><input type="radio" name="type" value="income" {{ old('type', $editRecord?->type) === 'income' ? 'checked' : '' }}><span>Entrada</span></label></div>
             <label>Descrição<input name="description" value="{{ old('description', $editRecord?->description) }}" placeholder="Ex.: Supermercado" required></label>
             <div class="form-grid"><label>Valor (R$)<input type="number" name="amount" value="{{ old('amount', $editRecord?->amount) }}" min="0.01" step="0.01" placeholder="0,00" required></label><label>Data<input type="date" name="occurred_on" value="{{ old('occurred_on', $editRecord?->occurred_on?->format('Y-m-d') ?? now()->toDateString()) }}" required></label></div>
             <label>Categoria<select name="category_id"><option value="">Sem categoria</option>@foreach($categories as $category)<option value="{{ $category->id }}" data-kind="{{ $category->kind }}" {{ (string) old('category_id', $editRecord?->category_id) === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select></label>
+            @if(!$editRecord)
+                <div class="card-purchase-fields" data-card-purchase-fields>
+                    <label>Forma de pagamento<select name="payment_method"><option value="direct" @selected(old('payment_method', 'direct') === 'direct')>Pagamento direto</option><option value="credit_card" @selected(old('payment_method') === 'credit_card') @disabled($creditCards->isEmpty())>Cartão de crédito</option></select></label>
+                    <div class="card-payment-panel" data-card-payment-panel hidden>
+                        @if($creditCards->isNotEmpty())
+                            <label>Cartão<select name="credit_card_id">@foreach($creditCards as $card)<option value="{{ $card->id }}" @selected((string) old('credit_card_id') === (string) $card->id)>{{ $card->name }} · final {{ $card->last_four }}</option>@endforeach</select></label>
+                            <div class="form-grid"><label>Tipo da compra<select name="card_purchase_type"><option value="one_time" @selected(old('card_purchase_type', 'one_time') === 'one_time')>Crédito à vista</option><option value="installments" @selected(old('card_purchase_type') === 'installments')>Compra parcelada</option></select></label><label data-installments-field hidden>Número de parcelas<input type="number" name="installments" value="{{ old('installments', 2) }}" min="2" max="120"></label></div>
+                            <label>Mês da primeira cobrança<input type="month" name="billing_month" value="{{ old('billing_month', $month->format('Y-m')) }}"></label>
+                            <div class="goal-form-note"><strong>Gastos futuros automáticos</strong><span>O valor informado é o total da compra. A Mia dividirá as parcelas e lançará cada cobrança no mês correspondente.</span></div>
+                        @else
+                            <div class="goal-form-note"><strong>Nenhum cartão ativo</strong><span><a href="{{ route('credit-cards.index') }}">Cadastre um cartão</a> antes de usar esta forma de pagamento.</span></div>
+                        @endif
+                    </div>
+                </div>
+            @endif
             <button class="btn btn-primary btn-block" type="submit">{{ $editRecord ? 'Salvar alterações' : 'Adicionar lançamento' }}</button>
             @if($editRecord)<a class="modal-cancel-link" href="{{ route('finance.index', ['month' => $month->format('Y-m'), 'page' => $records->currentPage(), 'filter_category' => $selectedCategoryId, 'filter_type' => $selectedType]) }}">Cancelar edição</a>@endif
         </form>
