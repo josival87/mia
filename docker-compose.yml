@@ -122,6 +122,11 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q artisan /proc/1/cmdline"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
     stop_grace_period: 130s
 
@@ -132,6 +137,11 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q artisan /proc/1/cmdline"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
     stop_grace_period: 40s
 
@@ -143,6 +153,11 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q artisan /proc/1/cmdline"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
 volumes:
