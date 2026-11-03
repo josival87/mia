@@ -32,6 +32,6 @@
     <p>Usamos conexão HTTPS, senhas com hash, chaves de integração cifradas, isolamento de dados por usuário e backups cifrados.</p>
 
     <h2>7. Seus direitos</h2>
-    <p>Você pode pedir confirmação, acesso, correção, portabilidade, anonimização ou exclusão dos seus dados, e revogar o consentimento, pelo e-mail [E-MAIL DE PRIVACIDADE] (art. 18 da LGPD).</p>
+    <p>Você pode pedir confirmação, acesso, correção, portabilidade, anonimização ou exclusão dos seus dados, e revogar o consentimento, pelo e-mail [E-MAIL DE PRIVACIDADE] (art. 18 da LGPD). Exportar e excluir seus dados também pode ser feito direto em Minha conta.</p>
 </main>
 @endsection

@@ -32,7 +32,9 @@ class PlanBController extends Controller
         $businesses = Business::where('status', 'active')->orderBy('name')->get();
         $summaries = $businesses->mapWithKeys(fn (Business $b) => [$b->id => $this->metrics->monthSummary($b, now())]);
 
-        return view('planb.index', compact('businesses', 'summaries'));
+        $survival = $businesses->isNotEmpty() ? $this->metrics->survivalIndex(request()->user()) : null;
+
+        return view('planb.index', compact('businesses', 'summaries', 'survival'));
     }
 
     public function create(): View

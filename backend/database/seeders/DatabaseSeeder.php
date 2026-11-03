@@ -53,6 +53,7 @@ class DatabaseSeeder extends Seeder
             ['audience' => 'client', 'label' => 'Atividades', 'route' => 'tasks.index', 'icon' => 'tasks', 'position' => 3],
             ['audience' => 'client', 'label' => 'Categorias', 'route' => 'categories.index', 'icon' => 'tag', 'position' => 4],
             ['audience' => 'client', 'label' => 'Plano B', 'route' => 'planb.index', 'icon' => 'wallet', 'position' => 5],
+            ['audience' => 'client', 'label' => 'Minha conta', 'route' => 'account.show', 'icon' => 'shield', 'position' => 6],
             ['audience' => 'admin', 'label' => 'Dashboard', 'route' => 'admin.dashboard', 'icon' => 'grid', 'position' => 1],
             ['audience' => 'admin', 'label' => 'Usuários', 'route' => 'admin.users', 'icon' => 'shield', 'position' => 2],
             ['audience' => 'admin', 'label' => 'Clientes', 'route' => 'admin.clients', 'icon' => 'users', 'position' => 3],

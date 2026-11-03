@@ -6,6 +6,7 @@ use App\Models\Business;
 use App\Models\DriverShift;
 use App\Models\FinanceRecord;
 use App\Models\TimeEntry;
+use App\Models\User;
 use Carbon\CarbonInterface;
 
 /**
@@ -155,5 +156,40 @@ class PlanBMetrics
         $perHour = $this->monthSummary($business, now())['profit_per_hour'];
 
         return $perHour && $perHour > 0 ? round($amount / $perHour, 1) : null;
+    }
+
+    /**
+     * Índice de sobrevivência: se a renda principal parar, quantos meses o caixa do Plano B
+     * sustenta o déficit entre os gastos pessoais e o lucro do Plano B (média dos 3 últimos meses fechados).
+     *
+     * @return array{monthly_personal_expenses: float, monthly_plan_b_profit: float, coverage_percent: float|null, months: float|null, reserve: float}
+     */
+    public function survivalIndex(User $user): array
+    {
+        $from = now()->startOfMonth()->subMonthsNoOverflow(3);
+        $to = now()->startOfMonth()->subDay();
+        $expenses = (float) FinanceRecord::query()->personal()->where('user_id', $user->id)->where('type', 'expense')
+            ->whereBetween('occurred_on', [$from->toDateString(), $to->toDateString()])->sum('amount') / 3;
+
+        $businesses = Business::withoutGlobalScopes()->where('user_id', $user->id)->where('status', 'active')->get();
+        $profit = 0.0;
+        $reserve = 0.0;
+        foreach ($businesses as $business) {
+            foreach ([1, 2, 3] as $m) {
+                $profit += $this->monthSummary($business, now()->startOfMonth()->subMonthsNoOverflow($m))['profit'];
+            }
+            $reserve += max(0, $this->cashBalance($business));
+        }
+        $profit /= 3;
+        $deficit = $expenses - $profit;
+
+        return [
+            'monthly_personal_expenses' => round($expenses, 2),
+            'monthly_plan_b_profit' => round($profit, 2),
+            'coverage_percent' => $expenses > 0 ? round(100 * max(0, $profit) / $expenses, 1) : null,
+            // null = o Plano B já cobre todos os gastos (ou não há gastos registrados)
+            'months' => $deficit > 0 ? round($reserve / $deficit, 1) : null,
+            'reserve' => round($reserve, 2),
+        ];
     }
 }
