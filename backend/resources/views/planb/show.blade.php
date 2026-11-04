@@ -59,7 +59,7 @@
             <div class="alert error">Ainda não sei seu custo por km: registre turnos que somem pelo menos 100 km nos últimos 30 dias.</div>
         @elseif(is_array(session('ride_result')))
             @php($r = session('ride_result'))
-            <div class="alert {{ $r['worth'] ? 'success' : 'error' }}"><strong>{{ $r['worth'] ? 'Vale a pena.' : 'Não compensa.' }}</strong> Lucro {{ $brl($r['profit']) }} ({{ $brl($r['profit_per_km']) }} por km@if($r['profit_per_hour'] !== null), {{ $brl($r['profit_per_hour']) }} por hora @endif). Seu custo: {{ $brl($r['cost_per_km']) }} por km.</div>
+            <div class="alert {{ $r['worth'] ? 'success' : 'error' }}"><strong>{{ $r['worth'] ? 'Vale a pena.' : 'Não compensa.' }}</strong> Lucro {{ $brl($r['profit']) }} ({{ $brl($r['profit_per_km']) }} por km{{ $r['profit_per_hour'] !== null ? ', '.$brl($r['profit_per_hour']).' por hora' : '' }}). Seu custo: {{ $brl($r['cost_per_km']) }} por km.</div>
         @endif
     </article>
 </section>

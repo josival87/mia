@@ -8,7 +8,8 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-interaction --prefer-dist --no-scripts --optimize-autoloader
 COPY . .
-RUN composer dump-autoload --optimize \
+RUN touch .env \
+    && composer dump-autoload --optimize \
     && chmod +x /app/docker/entrypoint.sh \
     && chown -R www-data:www-data storage bootstrap/cache
 

@@ -30,7 +30,13 @@
     @if($survival && $survival['monthly_personal_expenses'] > 0)
     <article class="panel"><div class="panel-heading"><div><h2>Índice de sobrevivência</h2><p>Se a renda principal parar, quanto tempo você se mantém? (média dos 3 últimos meses)</p></div></div>
         <p>O Plano B cobre <strong>{{ number_format($survival['coverage_percent'] ?? 0, 0, ',', '.') }}%</strong> dos seus gastos pessoais ({{ $brl($survival['monthly_plan_b_profit']) }} de {{ $brl($survival['monthly_personal_expenses']) }} por mês).</p>
-        <p>@if($survival['months'] === null)<strong>Seu Plano B já paga todos os seus gastos.</strong>@else Com o caixa atual do Plano B ({{ $brl($survival['reserve']) }}), você se mantém por <strong>{{ number_format($survival['months'], 1, ',', '.') }} meses</strong>.@endif</p>
+        <p>
+            @if($survival['months'] === null)
+                <strong>Seu Plano B já paga todos os seus gastos.</strong>
+            @else
+                Com o caixa atual do Plano B ({{ $brl($survival['reserve']) }}), você se mantém por <strong>{{ number_format($survival['months'], 1, ',', '.') }} meses</strong>.
+            @endif
+        </p>
     </article>
     @endif
 @endif

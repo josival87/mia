@@ -32,7 +32,9 @@ class PlanBTest extends TestCase
         $user = User::factory()->client()->create();
         $business = $this->driver($user);
         $ledger = app(PlanBLedger::class);
-        $ledger->recordShift($business, 3000, 2000, 100, 'uber');
+        for ($i = 0; $i < 10; $i++) {
+            $ledger->recordShift($business, 300, 200, 10, 'uber', 'manual', now()->startOfMonth()->addDays($i)->toDateString());
+        }
         $ledger->recordEntry($business, 'expense', 900, 'Combustível');
 
         $s = app(PlanBMetrics::class)->monthSummary($business, now());

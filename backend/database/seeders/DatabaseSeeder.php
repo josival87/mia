@@ -84,8 +84,10 @@ class DatabaseSeeder extends Seeder
             ['type' => 'expense', 'category_id' => $categoryIds['expense']['Transporte'], 'description' => 'Combustível', 'amount' => 240, 'occurred_on' => now()->startOfMonth()->addDays(12)],
             ['type' => 'expense', 'category_id' => $categoryIds['expense']['Assinaturas'], 'description' => 'Serviços digitais', 'amount' => 89.90, 'occurred_on' => now()->startOfMonth()->addDays(14)],
         ];
-        foreach ($client ? $financeSeeds : [] as $seed) {
-            FinanceRecord::firstOrCreate(['user_id' => $client->id, 'description' => $seed['description'], 'occurred_on' => $seed['occurred_on']->toDateString()], $seed + ['source' => 'seed']);
+        if (! app()->runningUnitTests()) {
+            foreach ($client ? $financeSeeds : [] as $seed) {
+                FinanceRecord::firstOrCreate(['user_id' => $client->id, 'description' => $seed['description'], 'occurred_on' => $seed['occurred_on']->toDateString()], $seed + ['source' => 'seed']);
+            }
         }
 
         $taskSeeds = [
@@ -93,8 +95,10 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Organizar documentos', 'description' => 'Separar documentos pessoais do mês.', 'priority' => 'medium', 'status' => 'todo', 'category_id' => $categoryIds['task']['Pessoal'], 'due_on' => now()->addDays(5)],
             ['name' => 'Revisar despesas', 'description' => 'Conferir os lançamentos da semana.', 'priority' => 'low', 'status' => 'done', 'category_id' => $categoryIds['task']['Pessoal'], 'due_on' => now(), 'completed_at' => now()->subDay()],
         ];
-        foreach ($client ? $taskSeeds : [] as $seed) {
-            Task::firstOrCreate(['user_id' => $client->id, 'name' => $seed['name']], $seed + ['source' => 'seed']);
+        if (! app()->runningUnitTests()) {
+            foreach ($client ? $taskSeeds : [] as $seed) {
+                Task::firstOrCreate(['user_id' => $client->id, 'name' => $seed['name']], $seed + ['source' => 'seed']);
+            }
         }
 
         foreach ([

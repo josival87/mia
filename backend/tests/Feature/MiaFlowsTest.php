@@ -304,7 +304,8 @@ class MiaFlowsTest extends TestCase
     public function test_client_cannot_access_admin_panel(): void
     {
         $client = User::where('email', 'cliente@mia.local')->firstOrFail();
-        $this->actingAs($client)->get('/admin')->assertForbidden();
+        $this->actingAs($client)->get('/admin')->assertRedirect(route('landing'));
+        $this->actingAs($client)->getJson('/admin')->assertForbidden();
     }
 
     public function test_admin_can_open_the_telegram_bot_token_configuration_in_settings(): void

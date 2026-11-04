@@ -149,7 +149,6 @@ class CategoryGoalsTest extends TestCase
         ]);
 
         $this->sendTelegramExpense($secret, 'goal-'.Str::uuid());
-        dump(collect(\Illuminate\Support\Facades\Http::recorded())->map(fn($p) => [$p[0]->url(), $p[0]->data()]));
 
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/sendMessage')
             && str_contains((string) $request['text'], "Categoria: {$category->name}")
