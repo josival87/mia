@@ -30,14 +30,16 @@ class FinanceController extends Controller
 
     public function edit(Request $request, FinanceRecord $finance)
     {
-        $this->authorizeOwner($request, $finance);
+        $this->authorize('update', $finance);
+        abort_if($finance->business_id !== null, 404);
 
         return $this->render($request, $finance);
     }
 
     public function update(Request $request, FinanceRecord $finance)
     {
-        $this->authorizeOwner($request, $finance);
+        $this->authorize('update', $finance);
+        abort_if($finance->business_id !== null, 404);
         $returnTo = $request->validate([
             'month' => ['sometimes', 'date_format:Y-m'],
             'page' => ['sometimes', 'integer', 'min:1'],
@@ -56,7 +58,8 @@ class FinanceController extends Controller
 
     public function destroy(Request $request, FinanceRecord $finance)
     {
-        $this->authorizeOwner($request, $finance);
+        $this->authorize('delete', $finance);
+        abort_if($finance->business_id !== null, 404);
         $finance->delete();
 
         return back()->with('success', 'Lançamento removido.');
@@ -193,12 +196,5 @@ class FinanceController extends Controller
         }
 
         return $data;
-    }
-
-    private function authorizeOwner(Request $request, FinanceRecord $record): void
-    {
-        abort_unless($record->user_id === $request->user()->id, 403);
-        // Lançamentos do Plano B são editados na tela do negócio.
-        abort_if($record->business_id !== null, 404);
     }
 }

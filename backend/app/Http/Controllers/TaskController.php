@@ -20,13 +20,13 @@ class TaskController extends Controller
 
     public function edit(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        $this->authorize('update', $task);
         return $this->render($request, $task);
     }
 
     public function update(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        $this->authorize('update', $task);
         $data = $this->validated($request);
         $data['completed_at'] = $data['status'] === 'done' ? ($task->completed_at ?? now()) : null;
         $task->update($data);
@@ -35,7 +35,7 @@ class TaskController extends Controller
 
     public function status(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        $this->authorize('update', $task);
         $data = $request->validate(['status' => ['required', Rule::in(['todo', 'doing', 'done'])]]);
         $task->update(['status' => $data['status'], 'completed_at' => $data['status'] === 'done' ? now() : null]);
         return back()->with('success', 'Status atualizado.');
@@ -43,7 +43,7 @@ class TaskController extends Controller
 
     public function destroy(Request $request, Task $task)
     {
-        $this->authorizeOwner($request, $task);
+        $this->authorize('delete', $task);
         $task->delete();
         return back()->with('success', 'Atividade removida.');
     }
@@ -75,6 +75,4 @@ class TaskController extends Controller
         if ($data['status'] === 'done') $data['completed_at'] = now();
         return $data;
     }
-
-    private function authorizeOwner(Request $request, Task $task): void { abort_unless($task->user_id === $request->user()->id, 403); }
 }

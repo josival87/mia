@@ -37,7 +37,7 @@ class CategoryGoalController extends Controller
 
     public function destroy(Request $request, CategoryGoal $goal)
     {
-        abort_unless($goal->user_id === $request->user()->id, 403);
+        $this->authorize('delete', $goal);
         $category = $goal->category?->name ?? 'categoria';
         $goal->delete();
 

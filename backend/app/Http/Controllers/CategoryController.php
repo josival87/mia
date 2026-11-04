@@ -29,7 +29,7 @@ class CategoryController extends Controller
 
     public function destroy(Request $request, Category $category)
     {
-        abort_unless($category->user_id === $request->user()->id, 403);
+        $this->authorize('delete', $category);
         $category->delete();
 
         return back()->with('success', 'Categoria personalizada removida.');
@@ -37,14 +37,14 @@ class CategoryController extends Controller
 
     public function edit(Request $request, Category $category): View
     {
-        abort_unless($category->user_id === $request->user()->id, 403);
+        $this->authorize('update', $category);
 
         return $this->render($request, $category);
     }
 
     public function update(Request $request, Category $category): RedirectResponse
     {
-        abort_unless($category->user_id === $request->user()->id, 403);
+        $this->authorize('update', $category);
 
         $data = $request->validate([
             'name' => [
