@@ -45,8 +45,16 @@ class PlanBNotify extends Command
             foreach (Business::withoutGlobalScopes()->where('user_id', $user->id)->where('status', 'active')->get() as $business) {
                 $s = $metrics->monthSummary($business, now());
                 $w = $metrics->safeWithdrawal($business);
-                $lines[] = sprintf('%s: lucro no mês %s%s. Retirada segura: %s.', $business->name, $this->brl($s['profit']),
+                $line = sprintf('%s: lucro no mês %s%s. Retirada segura: %s.', $business->name, $this->brl($s['profit']),
                     $s['profit_per_hour'] !== null ? ' ('.$this->brl($s['profit_per_hour']).' por hora)' : '', $this->brl($w['safe']));
+
+                $alert = $metrics->hourlyRateAlert($business, $user);
+                if ($alert && $alert['is_underpaid']) {
+                    $line .= sprintf("\n⚠️ Alerta de hora mal paga: %s/h vs sua hora principal de %s/h.",
+                        $this->brl($alert['plan_b_rate']), $this->brl($alert['primary_rate']));
+                }
+
+                $lines[] = $line;
             }
             if ($lines && $this->send($telegram, $user, "Resumo semanal do seu Plano B\n".implode("\n", $lines)."\nPara retirar: /retirada VALOR")) {
                 $sent++;

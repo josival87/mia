@@ -18,12 +18,16 @@
     <section class="metric-grid">
     @foreach($businesses as $business)
         @php($s = $summaries[$business->id])
+        @php($alert = $hourlyAlerts[$business->id] ?? null)
         <a class="metric-card" href="{{ route('planb.show', $business) }}" style="text-decoration:none;color:inherit">
             <div class="metric-head"><span>{{ $business->name }}</span><i>{{ \App\Models\Business::TYPES[$business->type] ?? '' }}</i></div>
             <strong>{{ $brl($s['profit']) }}</strong>
             <p class="{{ $s['profit'] >= 0 ? 'positive' : 'muted' }}">Lucro líquido no mês
                 @if($s['profit_per_hour'] !== null) · {{ $brl($s['profit_per_hour']) }} por hora @endif
             </p>
+            @if($alert && $alert['is_underpaid'])
+                <p style="color:#ef4444;font-size:0.85rem;margin-top:0.25rem">⚠️ Hora mal paga: {{ $brl($alert['plan_b_rate']) }}/h (principal: {{ $brl($alert['primary_rate']) }}/h)</p>
+            @endif
         </a>
     @endforeach
     </section>

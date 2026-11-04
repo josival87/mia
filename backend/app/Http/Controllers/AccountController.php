@@ -27,12 +27,27 @@ class AccountController extends Controller
         return view('account.show');
     }
 
+    public function updateIncome(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'primary_salary' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'primary_monthly_hours' => ['nullable', 'numeric', 'min:1', 'max:744'],
+        ]);
+
+        $request->user()->update([
+            'primary_salary' => $data['primary_salary'] ?? null,
+            'primary_monthly_hours' => $data['primary_monthly_hours'] ?? null,
+        ]);
+
+        return back()->with('success', 'Informações da renda principal atualizadas com sucesso.');
+    }
+
     public function export(Request $request): StreamedResponse
     {
         $user = $request->user();
         $data = [
             'exportado_em' => now()->toIso8601String(),
-            'conta' => $user->only(['name', 'email', 'telegram', 'created_at']),
+            'conta' => $user->only(['name', 'email', 'telegram', 'primary_salary', 'primary_monthly_hours', 'created_at']),
             'consentimentos' => Consent::where('user_id', $user->id)->get(['document', 'version', 'accepted_at']),
             'categorias' => Category::where('user_id', $user->id)->get(['id', 'name', 'kind', 'color', 'active']),
             'lancamentos' => FinanceRecord::where('user_id', $user->id)->orderBy('occurred_on')

@@ -50,6 +50,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/telegram', [TelegramConnectionController::class, 'disconnect'])->name('telegram.disconnect');
     Route::post('/iphone/chave', [IphoneIntegrationController::class, 'store'])->name('iphone.token.store');
     Route::get('/conta', [AccountController::class, 'show'])->name('account.show');
+    Route::put('/conta/renda-principal', [AccountController::class, 'updateIncome'])->name('account.income.update');
     Route::get('/conta/exportar', [AccountController::class, 'export'])->middleware('throttle:6,1')->name('account.export');
     Route::delete('/conta', [AccountController::class, 'destroy'])->middleware('throttle:5,1')->name('account.destroy');
     Route::prefix('plano-b')->name('planb.')->controller(PlanBController::class)->group(function () {

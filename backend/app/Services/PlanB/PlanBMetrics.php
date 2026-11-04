@@ -159,6 +159,43 @@ class PlanBMetrics
     }
 
     /**
+     * Compara o lucro por hora do Plano B com a hora da renda principal do usuário.
+     * Retorna alerta se o lucro por hora estiver abaixo do valor da hora principal.
+     *
+     * @return array{primary_rate: float, plan_b_rate: float, difference: float, is_underpaid: bool, ratio_percent: float}|null
+     */
+    public function hourlyRateAlert(Business $business, ?User $user = null, ?CarbonInterface $month = null): ?array
+    {
+        $user = $user ?? $business->user ?? User::find($business->user_id);
+        if (! $user) {
+            return null;
+        }
+
+        $primaryRate = $user->primaryHourlyRate();
+        if ($primaryRate === null || $primaryRate <= 0) {
+            return null;
+        }
+
+        $summary = $this->monthSummary($business, $month ?? now());
+        $planBRate = $summary['profit_per_hour'];
+        if ($planBRate === null) {
+            return null;
+        }
+
+        $isUnderpaid = $planBRate < $primaryRate;
+        $diff = round($primaryRate - $planBRate, 2);
+        $ratio = round(100 * $planBRate / $primaryRate, 1);
+
+        return [
+            'primary_rate' => $primaryRate,
+            'plan_b_rate' => $planBRate,
+            'difference' => $diff,
+            'is_underpaid' => $isUnderpaid,
+            'ratio_percent' => $ratio,
+        ];
+    }
+
+    /**
      * Índice de sobrevivência: se a renda principal parar, quantos meses o caixa do Plano B
      * sustenta o déficit entre os gastos pessoais e o lucro do Plano B (média dos 3 últimos meses fechados).
      *

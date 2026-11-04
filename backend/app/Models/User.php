@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-#[Fillable(['name', 'email', 'cpf', 'telegram', 'telegram_chat_id', 'telegram_user_id', 'role', 'status', 'password', 'telegram_verified_at'])]
+#[Fillable(['name', 'email', 'cpf', 'telegram', 'telegram_chat_id', 'telegram_user_id', 'role', 'status', 'password', 'telegram_verified_at', 'primary_salary', 'primary_monthly_hours'])]
 #[Hidden(['password', 'remember_token', 'iphone_ingest_token_hash'])]
 class User extends Authenticatable
 {
@@ -30,7 +30,17 @@ class User extends Authenticatable
             'iphone_ingest_token_created_at' => 'datetime',
             'iphone_ingest_last_used_at' => 'datetime',
             'password' => 'hashed',
+            'primary_salary' => 'decimal:2',
+            'primary_monthly_hours' => 'float',
         ];
+    }
+
+    public function primaryHourlyRate(): ?float
+    {
+        $salary = (float) ($this->primary_salary ?? 0);
+        $hours = (float) ($this->primary_monthly_hours ?? 0);
+
+        return $salary > 0 && $hours > 0 ? round($salary / $hours, 2) : null;
     }
 
     public function categories()

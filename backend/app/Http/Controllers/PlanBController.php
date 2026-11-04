@@ -30,11 +30,12 @@ class PlanBController extends Controller
     public function index(): View
     {
         $businesses = Business::where('status', 'active')->orderBy('name')->get();
+        $user = request()->user();
         $summaries = $businesses->mapWithKeys(fn (Business $b) => [$b->id => $this->metrics->monthSummary($b, now())]);
+        $hourlyAlerts = $businesses->mapWithKeys(fn (Business $b) => [$b->id => $this->metrics->hourlyRateAlert($b, $user)]);
+        $survival = $businesses->isNotEmpty() ? $this->metrics->survivalIndex($user) : null;
 
-        $survival = $businesses->isNotEmpty() ? $this->metrics->survivalIndex(request()->user()) : null;
-
-        return view('planb.index', compact('businesses', 'summaries', 'survival'));
+        return view('planb.index', compact('businesses', 'summaries', 'hourlyAlerts', 'survival'));
     }
 
     public function create(): View
@@ -98,17 +99,19 @@ class PlanBController extends Controller
     public function show(Business $business): View
     {
         $business->load('assets');
+        $user = request()->user();
         $summary = $this->metrics->monthSummary($business, now());
         $previous = $this->metrics->monthSummary($business, now()->subMonthNoOverflow());
         $withdrawal = $this->metrics->safeWithdrawal($business);
         $costPerKm = $business->type === 'driver' ? $this->metrics->costPerKm($business) : null;
+        $hourlyAlert = $this->metrics->hourlyRateAlert($business, $user);
         $records = FinanceRecord::where('business_id', $business->id)->where('user_id', $business->user_id)
             ->latest('occurred_on')->latest('id')->limit(15)->get();
         $shifts = $business->shifts()->latest('worked_on')->latest('id')->limit(10)->get();
         $projects = $business->projects()->withSum('timeEntries', 'minutes')->latest('updated_at')->get();
         $receivables = $business->receivables()->where('status', 'open')->orderBy('due_on')->get();
 
-        return view('planb.show', compact('business', 'summary', 'previous', 'withdrawal', 'costPerKm', 'records', 'shifts', 'projects', 'receivables'));
+        return view('planb.show', compact('business', 'summary', 'previous', 'withdrawal', 'costPerKm', 'hourlyAlert', 'records', 'shifts', 'projects', 'receivables'));
     }
 
     public function storeShift(Request $request, Business $business): RedirectResponse

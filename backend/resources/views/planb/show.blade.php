@@ -7,6 +7,16 @@
 @if(session('success'))<div class="alert success">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="alert error"><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 
+@if($hourlyAlert && $hourlyAlert['is_underpaid'])
+    <div class="alert error" style="margin-bottom:1.5rem">
+        <strong>⚠️ Alerta de hora mal paga:</strong> seu lucro no Plano B é de <strong>{{ $brl($hourlyAlert['plan_b_rate']) }}/h</strong>, abaixo da sua hora na renda principal (<strong>{{ $brl($hourlyAlert['primary_rate']) }}/h</strong>). Diferença de <strong>{{ $brl($hourlyAlert['difference']) }}/h</strong> a menos.
+    </div>
+@elseif($hourlyAlert && ! $hourlyAlert['is_underpaid'])
+    <div class="alert success" style="margin-bottom:1.5rem">
+        <strong>✓ Hora bem paga:</strong> seu lucro no Plano B (<strong>{{ $brl($hourlyAlert['plan_b_rate']) }}/h</strong>) supera a sua hora na renda principal (<strong>{{ $brl($hourlyAlert['primary_rate']) }}/h</strong>).
+    </div>
+@endif
+
 <section class="metric-grid">
     <article class="metric-card dark-card"><div class="metric-head"><span>Lucro líquido do mês</span><i>R$</i></div><strong>{{ $brl($summary['profit']) }}</strong>
         <p>Mês anterior: {{ $brl($previous['profit']) }}@if($summary['goal_progress'] !== null) · {{ number_format($summary['goal_progress'], 0) }}% da meta @endif</p></article>
