@@ -159,6 +159,31 @@ class PlanBMetrics
     }
 
     /**
+     * Rendimento líquido de locação: aluguel recebido menos despesas lançadas (condomínio, IPTU, vacância).
+     *
+     * @return array{income: float, expenses: float, fixed: float, tax_estimate: float, total_costs: float, net_yield: float}
+     */
+    public function rentalSummary(Business $business, ?CarbonInterface $month = null): array
+    {
+        $summary = $this->monthSummary($business, $month ?? now());
+        $income = (float) $summary['income'];
+        $expenses = (float) $summary['expenses'];
+        $fixed = (float) $summary['fixed'];
+        $tax = (float) $summary['tax_estimate'];
+        $totalCosts = round($expenses + $fixed + $tax, 2);
+        $netYield = round($income - $totalCosts, 2);
+
+        return [
+            'income' => $income,
+            'expenses' => $expenses,
+            'fixed' => $fixed,
+            'tax_estimate' => $tax,
+            'total_costs' => $totalCosts,
+            'net_yield' => $netYield,
+        ];
+    }
+
+    /**
      * Compara o lucro por hora do Plano B com a hora da renda principal do usuário.
      * Retorna alerta se o lucro por hora estiver abaixo do valor da hora principal.
      *

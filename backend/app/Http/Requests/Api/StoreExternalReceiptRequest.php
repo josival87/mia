@@ -22,6 +22,17 @@ class StoreExternalReceiptRequest extends FormRequest
             'description' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:999999999999.99'],
             'occurred_on' => ['sometimes', 'date_format:Y-m-d'],
+            'condominium' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'condominio' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'iptu' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'vacancy' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'vacancia' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'costs' => ['sometimes', 'nullable', 'array'],
+            'costs.condominium' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'costs.condominio' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'costs.iptu' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'costs.vacancy' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
+            'costs.vacancia' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ];
     }
 

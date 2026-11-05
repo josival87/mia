@@ -99,6 +99,22 @@
 </section>
 @endif
 
+@if($business->type === 'rental')
+<section class="dashboard-columns">
+    <article class="panel"><div class="panel-heading"><div><h2>Detalhamento da Locação</h2><p>Rendimento líquido e custos dos imóveis</p></div></div>
+        <table class="data-table"><tbody>
+            <tr><td>Aluguel bruto recebido</td><td>{{ $brl($summary['income']) }}</td></tr>
+            <tr><td>Custos operacionais (condomínio, IPTU, vacância)</td><td>− {{ $brl($summary['expenses']) }}</td></tr>
+            <tr><td>Custos fixos do negócio</td><td>− {{ $brl($summary['fixed']) }}</td></tr>
+            <tr><td><strong>Rendimento líquido</strong></td><td><strong>{{ $brl($summary['profit']) }}</strong></td></tr>
+        </tbody></table>
+    </article>
+    <article class="panel"><div class="panel-heading"><div><h2>Integrado ao AlugaPro</h2><p>Recebimentos e custos sincronizados</p></div></div>
+        <p class="muted">Os lançamentos enviados pelo AlugaPro caem diretamente neste negócio de Locação, separando receitas e despesas da sua conta pessoal.</p>
+    </article>
+</section>
+@endif
+
 <section class="dashboard-columns">
     @if($receivables->isNotEmpty() || $business->type === 'freelancer')
     <article class="panel"><div class="panel-heading"><div><h2>A receber</h2><p>A Mia avisa no Telegram no dia do vencimento</p></div></div>
