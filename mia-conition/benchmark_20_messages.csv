@@ -1,0 +1,22 @@
+text,expected_type,expected_amount,expected_category
+gastei 45 no almoço hoje,expense,45.00,Alimentação
+uber 28.50 volta do trabalho,expense,28.50,Transporte
+recebi 3500 salario,income,3500.00,Salário
+farmacia comprei remedio 89.90,expense,89.90,Saúde
+paguei a conta de luz 142.30,expense,142.30,Moradia
+gasolina 150 no posto ipiranga,expense,150.00,Transporte
+compras da semana mercado 320.00,expense,320.00,Alimentação
+recebi pix de 120 da aula particular,income,120.00,Outros
+cinema com pipoca 65 reais,expense,65.00,Lazer
+mensalidade academia 110,expense,110.00,Saúde
+padaria cafe da manha 18.50,expense,18.50,Alimentação
+internet fibra 99.90,expense,99.90,Moradia
+aluguel pago 1800,expense,1800.00,Moradia
+vendi um teclado usado por 250,income,250.00,Outros
+estacionamento shopping 22,expense,22.00,Transporte
+curso online udemy 39.90,expense,39.90,Educação
+lanche no ifood 54.00,expense,54.00,Alimentação
+restituicao do ir 450.00,income,450.00,Outros
+pedagio na estrada 14.80,expense,14.80,Transporte
+consulta dentista 200,expense,200.00,Saúde
+
