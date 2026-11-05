@@ -110,6 +110,40 @@ class TelegramController extends Controller
             return;
         }
 
+        $photo = data_get($message, 'photo');
+        $photoFileId = '';
+        $photoFileSize = 0;
+        if (is_array($photo) && count($photo) > 0) {
+            $largest = end($photo);
+            $photoFileId = (string) data_get($largest, 'file_id', '');
+            $photoFileSize = (int) data_get($largest, 'file_size', 0);
+        }
+
+        $document = data_get($message, 'document');
+        $docFileId = '';
+        $docMimeType = '';
+        $docFileSize = 0;
+        if (is_array($document)) {
+            $docMimeType = (string) data_get($document, 'mime_type', '');
+            if (in_array($docMimeType, ['image/jpeg', 'image/png', 'application/pdf'], true)) {
+                $docFileId = (string) data_get($document, 'file_id', '');
+                $docFileSize = (int) data_get($document, 'file_size', 0);
+            }
+        }
+
+        if ($photoFileId !== '' || $docFileId !== '') {
+            $this->handleFileMessage(
+                $user,
+                $chatId,
+                $updateId ?: null,
+                $photoFileId ?: $docFileId,
+                $photoFileSize ?: $docFileSize,
+                $docMimeType
+            );
+
+            return;
+        }
+
         $correction = PendingTelegramRecord::where('user_id', $user->id)
             ->where('status', 'awaiting_correction')->where('expires_at', '>', now())->latest()->first();
         $context = $correction ? $this->correctionContext($correction) : null;
@@ -447,6 +481,147 @@ class TelegramController extends Controller
                 $payload + ['duration_seconds' => $duration],
             ))
             ->throw()->json();
+    }
+
+    private function handleFileMessage(
+        User $user,
+        string $chatId,
+        ?string $updateId,
+        string $fileId,
+        int $fileSize,
+        string $declaredMime,
+    ): void {
+        if ($fileSize > 10 * 1024 * 1024) {
+            $this->reply($chatId, 'Arquivo muito grande. O limite para leitura de comprovantes e fotos é de 10 MB.');
+
+            return;
+        }
+
+        if (! preg_match('/^[A-Za-z0-9_-]{1,512}$/', $fileId)) {
+            $this->reply($chatId, 'O identificador do arquivo é inválido.');
+
+            return;
+        }
+
+        $token = SystemSetting::read('telegram_bot_token', config('services.telegram.bot_token'));
+        if (! $token) {
+            $this->reply($chatId, 'O bot do Telegram não está configurado.');
+
+            return;
+        }
+
+        try {
+            $fileInfo = Http::connectTimeout(5)->timeout(15)
+                ->get("https://api.telegram.org/bot{$token}/getFile", ['file_id' => $fileId])
+                ->throw()
+                ->json();
+
+            $filePath = (string) data_get($fileInfo, 'result.file_path', '');
+            $verifiedSize = (int) data_get($fileInfo, 'result.file_size', $fileSize);
+
+            if ($verifiedSize > 10 * 1024 * 1024) {
+                $this->reply($chatId, 'Arquivo muito grande. O limite para leitura de comprovantes e fotos é de 10 MB.');
+
+                return;
+            }
+
+            if (! preg_match('/^[A-Za-z0-9_.\/-]+\.(?:jpe?g|png|pdf)$/i', $filePath)) {
+                $this->reply($chatId, 'Formato de arquivo não suportado. Envie fotos em JPG, PNG ou documentos em PDF.');
+
+                return;
+            }
+
+            $fileBytes = Http::connectTimeout(5)->timeout(30)
+                ->get("https://api.telegram.org/file/bot{$token}/{$filePath}")
+                ->throw()
+                ->body();
+
+            if (strlen($fileBytes) > 10 * 1024 * 1024) {
+                $this->reply($chatId, 'Arquivo muito grande. O limite para leitura de comprovantes e fotos é de 10 MB.');
+
+                return;
+            }
+
+            $mimeType = match (true) {
+                $declaredMime !== '' => $declaredMime,
+                str_ends_with(strtolower($filePath), '.png') => 'image/png',
+                str_ends_with(strtolower($filePath), '.pdf') => 'application/pdf',
+                default => 'image/jpeg',
+            };
+
+            $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
+            $fileName = 'receipt.'.$extension;
+
+            $this->aiQuota->consume($user);
+            $url = $this->cognitionUrl('/parse-file');
+
+            $response = Http::cognition()->timeout(50)
+                ->attach('file', $fileBytes, $fileName, ['Content-Type' => $mimeType])
+                ->post($url);
+
+            if ($response->status() === 503 || str_contains($response->body(), 'GEMINI_PAID_TIER')) {
+                $this->reply($chatId, 'A leitura de fotos de cupons e prints exige o Gemini no nível pago (GEMINI_PAID_TIER=true) para garantir a privacidade dos seus dados. Sem ele, envie a despesa por texto ou áudio.');
+
+                return;
+            }
+
+            if (! $response->successful()) {
+                $this->reply($chatId, 'Não consegui processar o arquivo enviado. Tente novamente ou envie por texto/áudio.');
+
+                return;
+            }
+
+            $this->aiQuota->record($user, $response->json('usage'));
+
+            $records = $response->json('data', []);
+            if (empty($records) || ! is_array($records)) {
+                $this->reply($chatId, 'Não encontrei nenhum lançamento financeiro legível nesta imagem. Tente enviar novamente com melhor enquadramento.');
+
+                return;
+            }
+
+            $validCount = 0;
+            foreach ($records as $index => $record) {
+                if (! is_array($record)) {
+                    continue;
+                }
+
+                try {
+                    $validated = $this->recordSafety->validatedAiRecord($record, $user);
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $pending = new PendingTelegramRecord([
+                    'user_id' => $user->id,
+                    'token' => (string) Str::uuid(),
+                    'telegram_chat_id' => $chatId,
+                    'origin_update_id' => $updateId ? $updateId.':file:'.$index : null,
+                    'kind' => (string) ($validated['kind'] ?? 'finance'),
+                    'payload' => $validated,
+                    'confidence' => max(0, min(1, (float) ($validated['confidence'] ?? 0.95))),
+                    'reason' => 'receipt',
+                    'status' => 'pending',
+                    'expires_at' => now()->addMinutes(30),
+                ]);
+                $pending->save();
+
+                $this->requestConfirmation($pending, false);
+                $validCount++;
+            }
+
+            if ($validCount === 0) {
+                $this->reply($chatId, 'Não consegui validar os lançamentos encontrados na imagem.');
+            }
+        } catch (ValidationException $exception) {
+            $this->replyValidationFailure($chatId, $exception);
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao processar arquivo no Telegram.', [
+                'exception_class' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+            $this->reply($chatId, 'Não consegui processar essa imagem no momento. Tente novamente mais tarde ou digite o lançamento.');
+        }
     }
 
     private function cognitionRequest(string $path, array $payload): array
