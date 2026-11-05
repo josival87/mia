@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Business;
 use App\Models\Category;
 use App\Models\CategoryGoal;
 use App\Models\FinanceRecord;
 use App\Services\CategoryGoalProgressService;
+use App\Services\PlanB\PlanBMetrics;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -13,7 +15,10 @@ use Illuminate\Validation\Rule;
 
 class FinanceController extends Controller
 {
-    public function __construct(private readonly CategoryGoalProgressService $goalProgress) {}
+    public function __construct(
+        private readonly CategoryGoalProgressService $goalProgress,
+        private readonly PlanBMetrics $planBMetrics,
+    ) {}
 
     public function index(Request $request)
     {
@@ -104,6 +109,22 @@ class FinanceController extends Controller
             ->map(fn (CategoryGoal $goal) => $this->goalProgress->forGoal($goal, $trackingDate))
             ->keyBy('goal_id');
 
+        $activeBusinesses = Business::where('user_id', $request->user()->id)->where('status', 'active')->orderBy('name')->get();
+        $goalPlanBHours = [];
+        foreach ($categoryGoals as $goal) {
+            $goalPlanBHours[$goal->id] = [];
+            foreach ($activeBusinesses as $business) {
+                $hours = $this->planBMetrics->hoursFor($business, (float) $goal->monthly_amount);
+                if ($hours !== null && $hours > 0) {
+                    $goalPlanBHours[$goal->id][] = [
+                        'business_id' => $business->id,
+                        'business_name' => $business->name,
+                        'hours' => $hours,
+                    ];
+                }
+            }
+        }
+
         return view('finance.index', compact(
             'month',
             'records',
@@ -118,6 +139,7 @@ class FinanceController extends Controller
             'goalCategories',
             'categoryGoals',
             'goalProgress',
+            'goalPlanBHours',
             'trackingDate',
             'editRecord',
         ));

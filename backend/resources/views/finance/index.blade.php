@@ -28,6 +28,13 @@
                 <div class="goal-values"><div><span>Meta mensal</span><strong>R$ {{ number_format((float) $progress['monthly_amount'], 2, ',', '.') }}</strong></div><div><span>Meta semanal</span><strong>R$ {{ number_format((float) $progress['weekly_target'], 2, ',', '.') }}</strong></div><div><span>Restante</span><strong>R$ {{ number_format((float) $progress['remaining_amount'], 2, ',', '.') }}</strong></div></div>
                 <div class="goal-progress-label"><span>R$ {{ number_format((float) $progress['spent_amount'], 2, ',', '.') }} utilizados</span><strong>{{ number_format((float) $progress['percentage'], 1, ',', '.') }}%</strong></div>
                 <div class="goal-progress"><i style="width: {{ $progress['bar_percentage'] }}%"></i></div>
+                @if(!empty($goalPlanBHours[$goal->id]))
+                    <div class="goal-planb-hours" style="margin-top: 10px; font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 4px;">
+                        @foreach($goalPlanBHours[$goal->id] as $planB)
+                            <span>custa {{ $planB['hours'] }} horas de Plano B{{ count($goalPlanBHours[$goal->id]) > 1 ? ' (' . $planB['business_name'] . ')' : '' }}</span>
+                        @endforeach
+                    </div>
+                @endif
             </article>
         @empty
             <div class="panel empty-state goal-empty"><strong>Nenhuma meta cadastrada</strong><p>Defina um valor mensal para uma categoria. A Mia dividirá o valor igualmente entre as semanas e renovará o controle todo mês.</p><button class="btn btn-primary" type="button" data-modal-open="goal-modal">Cadastrar primeira meta</button></div>
