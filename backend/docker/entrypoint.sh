@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+# No Railway cada servico usa a mesma imagem; MIA_ROLE escolhe o processo.
+case "$MIA_ROLE" in
+  worker) exec php artisan queue:work --sleep=1 --tries=1 --timeout=120 --max-time=3600 ;;
+  scheduler) exec php artisan schedule:work ;;
+esac
+
 if [ -z "$APP_KEY" ]; then
   echo "APP_KEY ausente. Gere uma com: php artisan key:generate --show" >&2
   exit 1
@@ -22,4 +28,4 @@ fi
 
 php artisan mia:telegram-sync --webhook-only || true
 
-exec frankenphp php-server --listen :8000 --root public/
+exec frankenphp php-server --listen ":${PORT:-8000}" --root public/
